@@ -1,0 +1,15 @@
+{
+  "name": "ahui-main-image-design",
+  "version": "3.3.1",
+  "private": true,
+  "type": "module",
+  "description": "阿辉的主图设计分享版：逐步策划、文案确认、小样和六张高清图，按宿主生图工具适配",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "verify": "node scripts/verify.mjs"
+  }
+}

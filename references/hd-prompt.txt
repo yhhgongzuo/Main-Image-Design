@@ -1,0 +1,19 @@
+Produce ONE standalone high-definition square 1:1 Amazon US listing image for panel {{PANEL}}. Prefer native 2048x2048 if supported; otherwise use native approximately 1K square output. Do not artificially resample to pretend a higher resolution.
+
+Attachment 1 is the APPROVED DESIGN CROP. Preserve its scene, camera direction, framing, subject position and scale, composition, colors, typography style, text regions, hierarchy and whitespace. This is a clarity-focused reconstruction of an approved design, not a new design. Do not introduce a new visual style or reinterpret the layout.
+
+Other attachments are ORIGINAL PRODUCT evidence. Use them to correct product geometry, proportions, components, material appearance, colors and real markings; do not copy their background or replace the approved camera direction. Do not copy malformed geometry or garbled text from the crop. Never invent unseen structures, accessories or features.
+Product: {{PRODUCT}}
+Identity constraints: {{IDENTITY}}
+Reference roles:
+{{REFERENCES}}
+Evidence boundaries: {{LIMITS}}
+
+Improve clarity, clean edges and text readability. Correct local deformation and obvious hand anatomy, contact, occlusion, support and scale errors while preserving the approved arrangement. Keep surfaces natural, backgrounds clean and existing whitespace intact. Do not add decorations, props, particles, new textures, effects, claims, badges or watermarks. Avoid oversharpening, halos, exaggerated contrast, excessive microtexture or a cluttered background. Preserve existing soft focus where intentional.
+
+EXACT APPROVED VISIBLE COPY (language: {{LANGUAGE}}):
+{{COPY}}
+Render every supplied character, number, unit, table row and footnote verbatim. Do not rewrite, translate, omit, add or guess text from blurry pixels. Use the specified language's reading direction and natural line breaks. Preserve the approved text placement and hierarchy; make only minimal local adjustments needed for accurate readable lettering. Empty marketing copy means no marketing copy. Faithful physical product marks are governed by the original product evidence.
+
+{{MAIN}}
+{{USER_CHANGE}}

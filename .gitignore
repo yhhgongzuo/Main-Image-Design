@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+*.egg-info/
+.venv/
+venv/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local work dirs
+work/
+outputs/

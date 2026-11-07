@@ -1,0 +1,6 @@
+interface:
+  display_name: "阿辉的主图设计"
+  short_description: "上传产品图，逐步选风格和确认文案，再制作六张独立主图；支持宿主工具适配"
+  default_prompt: "用 $ahui-main-image-design 根据我的产品图制作六张主图，带我选风格、确认文案，先看小样再做高清图。"
+policy:
+  allow_implicit_invocation: true
