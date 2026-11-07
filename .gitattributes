@@ -1,0 +1,4 @@
+# 所有文件一律不做换行符转换（CRLF / LF 保持原样）
+# 目的：git clone 或网页 Download ZIP 得到的字节，与 Release 安装包完全一致，
+# 才能通过 release-manifest.json 的 sha256 完整性校验。
+* -text

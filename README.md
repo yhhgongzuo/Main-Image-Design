@@ -6,6 +6,10 @@
 
 **⬇️ 一键下载安装包：[main-image-design.zip](https://github.com/yhhgongzuo/Main-Image-Design/releases/latest/download/main-image-design.zip)**
 
+> ⚠️ **装这个技能只认上面这个 Release 安装包。**
+> 请点上面的下载按钮，或到 [Releases](https://github.com/yhhgongzuo/Main-Image-Design/releases) 里下载 zip。
+> **不要用仓库的「Code → Download ZIP」，也不要用 `git clone` 拉源码来装**——那样拿到的是源码副本，不是发布包，装的时候会报「文件未登记或已变更」并中断。源码放这里只是方便你查阅流程和脚本。
+
 ---
 
 ## 🎯 这个 Skill 能帮你解决什么
