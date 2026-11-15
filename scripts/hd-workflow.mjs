@@ -5,6 +5,9 @@ import { read, write, need, hash, imageIO, createHandoff } from './workflow.mjs'
 import { currentComposite, copyRecord } from './composite-revisions.mjs';
 import { normalizeLocale, requireCopyConfirmation } from './copy-language.mjs';
 import { userMessage } from './interaction.mjs';
+import { PANEL_EXECUTION_FIELDS } from './creative-direction.mjs';
+
+import { isDomestic, noCopyPanels, domesticPanelPolicy, domesticStyleBrief } from './market-profile.mjs';
 
 const file = (run, name) => path.join(run, name);
 const load = (run, name) => read(file(run, name));
@@ -21,7 +24,11 @@ const attemptNumber = attempt => need(Number.isInteger(attempt) && attempt >= 1,
 const latestAttempt = (run, index) => Math.max(0, ...fs.readdirSync(run).filter(n => new RegExp(`^hd-${index}-\\d+-claim\\.json$`).test(n)).map(n => Number(n.split('-')[2])));
 const sourceNames = ['inputs.json','product-understanding.json','style-analysis.json','six-image-blueprint.json','interaction.json','composite-plan.json'];
 
-export const SAMPLE_MESSAGE = '这是六宫格小样，还不是最终成品，先看整体风格、排版和内容安排。有想调整的地方，现在直接告诉我，我会修改这张小样；没问题就回复“继续做高清图”。下一步会把六格分别裁切，制作成六张独立高清图，并在高清制作时修正模糊、产品和文字变形等细节。';
+export const SAMPLE_MESSAGE = '已按你的要求调整，请看看这版效果。**风格仍不满意，可以再上传更接近预期的参考图**，我会重新分析并调整。局部想改，告诉我第几张、哪里想改就行。\n\n**整体满意，回复“继续做高清图”**，我会结合产品原图和已确认文案制作六张独立高清图，小字和边缘的清晰度会在下一步处理。';
+function sampleMessage(composite) {
+  if (composite.history.length) return SAMPLE_MESSAGE;
+  return '这是六宫格初稿，先看 **整体风格、排版和内容**，还不是最终高清图。\n\n**风格不满意，直接上传一张你真正想要的风格参考图**，告诉我“按这张的感觉调整”。之前发过参考图，也可以换一张更接近你预期的，我会重新分析它的风格，调整这套初稿。\n\n**只想改局部，告诉我第几张、哪里想改**，用大白话说就行。\n\n**整体满意，回复“继续做高清图”**，我会结合产品原图和已确认文案，制作六张独立高清图。小字和边缘的清晰度会在下一步处理。';
+}
 export const DELIVERY_MESSAGE = '六张独立高清图已做好，下面可以逐张查看和下载。哪张需要修改，直接告诉我编号和想改的地方，或者把那张图发回来，用大白话说明就行，我会针对那张调整。';
 
 function source(run) {
@@ -45,7 +52,7 @@ export function previewHD(run) {
     digest, source_digest: src.digest, composite_sha256: src.result.sha256, status: 'awaiting_approval', panels };
   atom(run, 'hd-approval.json', state);
   // Keep approved copy internal. The host displays only image_path and preview.
-  return { version: state.version, digest: state.digest, status: state.status, image_path: src.result.image_path, preview: SAMPLE_MESSAGE };
+  return { version: state.version, digest: state.digest, status: state.status, image_path: src.result.image_path, revision: src.revision, candidates: src.candidates, preview: sampleMessage(src) };
 }
 export function approveHD(run, response) {
   const state = load(run, 'hd-approval.json');
@@ -74,39 +81,56 @@ export function splitHD(run) {
 }
 function prepareHD(run, index, capability, request = null) {
   panelIndex(index);
+  const market = load(run, 'inputs.json'), blueprint = load(run, 'six-image-blueprint.json');
+  const domestic = isDomestic(market);
   const state = approved(run), crops = load(run, 'hd-crops.json');
   need(crops.approval_digest === state.digest, 'Crops belong to another approval');
   const previous = latestAttempt(run, index), attempt = previous + 1;
   let copy = state.panels[index - 1];
-  let locale = currentComposite(run).locale;
+  const composite = currentComposite(run);
+  let locale = composite.locale;
+  let previousResult = null, appliedChanges = [];
   if (previous) {
     need(userMessage(request?.user_request), 'No automatic retry; a new user modification request is required');
-    const prior = load(run, key(index, previous, 'claim'));
-    copy = prior.copy;
-    locale = prior.locale || locale;
+    need(exists(run, key(index, previous, 'result')) || (exists(run, key(index, previous, 'failure')) && load(run, key(index, previous, 'failure')).definitive === true), 'Previous result unknown; wait for the original call');
+    if (!request.revert_to_original) {
+      for (let n = previous; n >= 1; n--) {
+        if (!exists(run, key(index, n, 'result'))) continue;
+        const successful = load(run, key(index, n, 'claim'));
+        previousResult = load(run, key(index, n, 'result'));
+        need(imageIO({ action: 'inspect', files: [previousResult.path] })[0].sha256 === previousResult.sha256, 'Previous successful design changed');
+        copy = successful.copy;
+        locale = successful.locale || locale;
+        appliedChanges = successful.applied_changes || (successful.user_request ? [successful.user_request.message] : []);
+        break;
+      }
+    }
     const requestedLocale = normalizeLocale(request.locale || locale);
-    if (requestedLocale !== locale) {
-      need(request.copy, 'Language change requires rewritten copy');
-      requireCopyConfirmation(run, request);
+    let replacement = request.copy;
+    if (request.panels || requestedLocale !== locale) {
+      need(request.copy || request.panels, 'Language change requires rewritten copy');
+      const confirmed = requireCopyConfirmation(run, request, index);
+      replacement = confirmed.panels.find(p => p.index === index);
     }
     locale = requestedLocale;
-    need(exists(run, key(index, previous, 'result')) || (exists(run, key(index, previous, 'failure')) && load(run, key(index, previous, 'failure')).definitive === true), 'Previous result unknown; wait for the original call');
     need(request.user_request.message_id !== state.response.message_id && request.user_request.message_id !== load(run, 'design-approval.json').user_response.message_id, 'Need a new user modification after generation');
     for (let n = 1; n <= previous; n++) need(load(run, key(index, n, 'claim')).user_request?.message_id !== request.user_request.message_id, 'User modification already submitted');
-    if (request.copy) {
+    if (replacement) {
       need(text(request.fact_review), 'Copy changes need product-fact review');
-      copy = copyRecord(request.copy, index, locale);
+      copy = copyRecord(replacement, index, locale, noCopyPanels(market, blueprint));
     }
+    appliedChanges = [...appliedChanges, request.user_request.message];
   } else need(request == null, 'Initial six tasks use the approved sample and copy');
   // Validate original provenance, then apply the live attachment limit to this panel's subset.
   const original = createHandoff(run, { ...capability, max_reference_images: undefined }), crop = crops.panels[index - 1];
   need(crop.index === index && path.resolve(crop.path) === path.resolve(run, 'hd-crops', `${index}.png`), 'Invalid crop path');
   need(imageIO({ action: 'inspect', files: [crop.path] })[0].sha256 === crop.sha256, 'Crop changed');
-  const product = load(run, 'product-understanding.json'), p = currentComposite(run).panel_sources[index - 1];
+  const product = load(run, 'product-understanding.json'), p = composite.panel_sources[index - 1];
   const selection = load(run, 'reference-selection.json').selected;
   const ids = [...new Set([...p.angle_evidence.source_ids, ...p.source_ids])];
   need(ids.length > 0, 'Panel needs product evidence');
-  const references = [crop.path, ...ids.map(id => {
+  const designBasis = previousResult ? previousResult.path : crop.path;
+  const references = [designBasis, ...ids.map(id => {
     const position = selection.findIndex(s => s.id === id);
     need(position >= 0, `Panel product reference ${id} was not selected; replan before generation`);
     return original.tool_arguments.referenced_image_paths[position];
@@ -116,16 +140,23 @@ function prepareHD(run, index, capability, request = null) {
     const s = product.sources.find(s => s.id === id);
     return `Attachment ${i + 2}: ${s.role}; ${s.visual_summary}; ${s.unique_contribution}`;
   }).join('\n');
-  const template = fs.readFileSync(new URL('../references/hd-prompt.txt', import.meta.url), 'utf8');
+  const template = fs.readFileSync(new URL(domestic ? '../references/hd-prompt-domestic.txt' : '../references/hd-prompt.txt', import.meta.url), 'utf8');
+  for (const field of PANEL_EXECUTION_FIELDS) need(text(p[field]), `Panel ${index} execution guidance missing: ${field}`);
   const variables = {
+    PLATFORM: market.platform, VISUAL_SYSTEM: domestic ? (composite.style_override || domesticStyleBrief(load(run, 'style-analysis.json'))) : '',
+    APPROVED_CHANGE: [composite.style_override ? `Current approved replacement style: ${composite.style_override}. The latest approved crop and this style override incompatible earlier panel guidance; do not restore the former style.` : '', composite.design_guidance ? `Approved composite adjustments; apply only what is relevant to this panel: ${composite.design_guidance}` : ''].filter(Boolean).join('\n'),
     PANEL: String(index), LANGUAGE: locale, PRODUCT: product.name, IDENTITY: JSON.stringify(product.identity_lock),
     REFERENCES: referenceNotes, LIMITS: p.angle_evidence.limits,
+    PHOTOGRAPHY: p.lighting_materials, SCENE_PHYSICS: p.scene_physics,
+    PRESENTATION: p.presentation, COMPOSITION: p.composition,
     COPY: JSON.stringify({ title: copy.title, subtitle: copy.subtitle, extra_copy: copy.extra_copy }),
-    MAIN: index === 1 ? 'MAIN IMAGE: pure white #FFFFFF; complete product and verified included items only; no marketing text, people or badges. Keep the approved framing.' : '',
-    USER_CHANGE: previous ? `The user explicitly requests this targeted change: ${request.user_request.message}. Apply only this change in addition to clarity corrections; preserve everything else. The exact copy above takes precedence over blurry pixels.` : '',
+    MAIN: domestic ? domesticPanelPolicy(market, blueprint, index) : index === 1 ? 'MAIN IMAGE: pure white #FFFFFF; complete product and verified included items only; no marketing text, people or badges. Keep the approved framing.' : '',
+    USER_CHANGE: previous ? `Attachment 1 is the current design basis${previousResult ? ' from the latest successful edit' : ' from the original approved sample'}. Preserve the edits already present there. Earlier applied requests in chronological order: ${JSON.stringify(appliedChanges.slice(0, -1))}. The current request overrides conflicting earlier requests: ${request.user_request.message}. Apply only this targeted change in addition to clarity corrections; preserve everything else. The exact copy above takes precedence over blurry pixels.` : '',
   };
   const prompt = template.replace(/\{\{([A-Z_]+)\}\}/g, (_, name) => { need(Object.hasOwn(variables, name), 'Unknown prompt variable'); return variables[name]; });
-  return { index, attempt, copy, locale, user_request: request?.user_request || null, approval_digest: state.digest, status: 'awaiting_native_result', tool: capability.tool, capability,
+  return { index, attempt, copy, locale, canvas_ratio: '1:1', task_role: 'hd', design_basis: designBasis, applied_changes: appliedChanges,
+    copy_batch_digest: request?.panels ? request.copy_confirmation.digest : null,
+    user_request: request?.user_request || null, approval_digest: state.digest, status: 'awaiting_native_result', tool: capability.tool, capability,
     tool_arguments: { prompt, referenced_image_paths: references, transparent_background: false } };
 }
 export function claimHD(run, index, capability, request = null) {
@@ -134,7 +165,7 @@ export function claimHD(run, index, capability, request = null) {
 }
 // The native host evaluates this exact self-contained function from the batch handoff.
 // Save errors retain the original result; they never cause generation retries.
-export async function dispatchNativeBatch(jobs, generate, persist, concurrency = 6) {
+export async function dispatchNativeBatch(jobs, generate, persist, concurrency = 1) {
   if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error('Invalid concurrency');
   const settled = new Array(jobs.length);
   let next = 0;
@@ -221,7 +252,12 @@ export function finishHD(run) {
     return { ...entry, image_path: dest, width: entry.result.width, height: entry.result.height };
   });
   const complete = entries.every(e => e.status === 'generated');
+  const dimensionWarnings = published.filter(entry => entry.result && (entry.width !== entry.height || Math.min(entry.width, entry.height) < 1000))
+    .map(entry => ({ index: entry.index, width: entry.width, height: entry.height,
+      reason: [entry.width !== entry.height ? '非1:1正方形' : '', Math.min(entry.width, entry.height) < 1000 ? '短边不足约1K' : ''].filter(Boolean).join('、') }));
+  const dimensionMessage = dimensionWarnings.length ? `\n\n尺寸提示：${dimensionWarnings.map(entry => `第${entry.index}张实际${entry.width}×${entry.height}（${entry.reason}）`).join('；')}。已保留原始结果，需要调整可指定编号。` : '';
   const report = { status: complete ? 'complete' : 'partial', visual_review: 'user', panels: published,
-    message: complete ? DELIVERY_MESSAGE : `已完成${entries.filter(e => e.result).length}张，未生成：${entries.filter(e => !e.result).map(e => e.index).join('、')}。可先查看已完成的图片；需要补做或修改哪张，直接告诉我编号和要求。` };
+    dimensions_match_target: dimensionWarnings.length === 0, dimension_warnings: dimensionWarnings,
+    message: (complete ? DELIVERY_MESSAGE : `已完成${entries.filter(e => e.result).length}张，未生成：${entries.filter(e => !e.result).map(e => e.index).join('、')}。可先查看已完成的图片；需要补做或修改哪张，直接告诉我编号和要求。`) + dimensionMessage };
   atom(run, 'hd-delivery.json', report); return report;
 }

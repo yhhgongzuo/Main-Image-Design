@@ -1,6 +1,10 @@
 Produce ONE standalone high-definition square 1:1 Amazon US listing image for panel {{PANEL}}. Prefer native 2048x2048 if supported; otherwise use native approximately 1K square output. Do not artificially resample to pretend a higher resolution.
 
-Attachment 1 is the APPROVED DESIGN CROP. Preserve its scene, camera direction, framing, subject position and scale, composition, colors, typography style, text regions, hierarchy and whitespace. This is a clarity-focused reconstruction of an approved design, not a new design. Do not introduce a new visual style or reinterpret the layout.
+Attachment 1 is the CURRENT DESIGN REFERENCE: the approved sample crop for initial production, or the latest successful image for a targeted edit. Preserve its scene, camera direction, framing, subject position and scale, composition, colors, typography style, text regions, hierarchy and whitespace, except for the current explicit user change below. Earlier successful adjustments remain part of this design. Do not introduce an unrequested visual style or reinterpret the layout.
+
+EDGE HANDLING: Inspect only the extreme edge of the design crop for a very narrow white or near-white strip, typically a few pixels, left by composite separators, cropping or resampling. Only when clearly a technical remnant rather than an intentional design feature, remove that remnant and naturally continue the adjacent background to the canvas edge. Preserve deliberate white borders, card outlines, whitespace, white product backgrounds and white objects near the edge. When uncertain, preserve the approved design. Do not zoom, stretch, crop products or text, remove legitimate design content, or add a new border to hide the strip. The strip's width is relative to the input crop; do not apply a fixed pixel trim.
+
+{{APPROVED_CHANGE}}
 
 Other attachments are ORIGINAL PRODUCT evidence. Use them to correct product geometry, proportions, components, material appearance, colors and real markings; do not copy their background or replace the approved camera direction. Do not copy malformed geometry or garbled text from the crop. Never invent unseen structures, accessories or features.
 Product: {{PRODUCT}}
@@ -10,6 +14,13 @@ Reference roles:
 Evidence boundaries: {{LIMITS}}
 
 Improve clarity, clean edges and text readability. Correct local deformation and obvious hand anatomy, contact, occlusion, support and scale errors while preserving the approved arrangement. Keep surfaces natural, backgrounds clean and existing whitespace intact. Do not add decorations, props, particles, new textures, effects, claims, badges or watermarks. Avoid oversharpening, halos, exaggerated contrast, excessive microtexture or a cluttered background. Preserve existing soft focus where intentional.
+
+APPROVED PANEL PHOTOGRAPHY (guidance only, never visible copy):
+{{PHOTOGRAPHY}}
+Approved physical relationships: {{SCENE_PHYSICS}}
+Approved presentation: {{PRESENTATION}}
+Approved composition: {{COMPOSITION}}
+Keep the approved scene contents and layout, but correct waxy skin, homogenized highlights, unnaturally smooth materials and incoherent light within that arrangement. Original product evidence governs material appearance; do not copy rendering defects from the crop. Preserve natural material colors instead of tinting every surface to the brand palette. Soft light must retain form, contact shadows and distinct material responses. Use texture appropriate to subject and viewing distance; do not invent wear or amplify pores or flock fibers. Where approved people are present, keep natural behavior, skin tonal variation, hair and fabric detail appropriate to framing. Never add people to an approved person-free scene. Distinguish a physically shared scene from an approved graphic overlay of an enlarged product close-up; do not imply a giant real object. An explicitly approved non-photographic style remains that style.
 
 EXACT APPROVED VISIBLE COPY (language: {{LANGUAGE}}):
 {{COPY}}

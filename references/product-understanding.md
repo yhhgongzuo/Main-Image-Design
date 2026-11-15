@@ -12,7 +12,7 @@
 - 其他 role 可为 front、back、side、top、bottom、interior、detail、packaging、logo、scene、surface_material。依据实际图像判定，不根据文件名判定。
 - `facts[]`：`{id,statement,source,source_ids,evidence}`。source 是 user/image/generic。用户原文引用 CHAT，文档 D1…，图像 P1…；evidence 写原文引句或具体可见区域。图片与用户信息冲突时记录差异，身份关键冲突需澄清，不把错误商品“修”成用户描述。
 - `selling_points[]`：`{text,fact_ids}`；从已确认事实选有购买意义的优势。避免把观察到反光直接当成不锈钢/真金/特定材料成分。
-- `unknowns[]`：无法确认的材质成分、尺寸、不可见背面、功能/性能等。缺少参数无需停止；避开依赖这些参数的镜头与文案。
+- `unknowns[]`：首轮已询问后仍无法确认的材质成分、规格、不可见背面、功能／性能等。缺少资料时先按交互文档问一轮，用户无资料或部分回答后继续，并避开依赖未知事实的镜头与文案。
 
 缺少资料先按交互文档简短追问一轮；用户明确无资料或部分回答后，再按可见事实策划。推导顺序为“可见特征→普通使用意义→买家关心的问题→画面证据”。例如可见提手可展示抓握位置，不能写轻量、承重或久提不累。优先将文案关联image/user事实；generic只容纳不涉及产品能力的展示描述，source_ids留空且说明边界，不用空泛品质口号凑五个卖点。不得含未经证实的性能、尺寸重量、材质成分、防水、认证、安全、附赠品等承诺。
 
@@ -21,6 +21,8 @@
 必须锁定 silhouette、proportions、color、structure、material_appearance、components、accessories、logo_policy、must_preserve、forbidden_changes、geometry_constraints。
 几何锁定使用可确认的相对比例；没有真实尺寸不换算厘米。服装关注衣长、袖长、领口、版型；工具关注柄与头部、活动件/开关、安装与动作；织物关注纹样尺度、方向、网格、纹理和拼接关系。
 看不清的 Logo/刻字保持原位置、大小、对比与不可读形状，不补写品牌或伪认证。看不到内部就不策划内部结构图。场景道具不能暗示附赠、容量或兼容性。只写有证据的使用动作。
+
+完整identity_lock直接进入首次合集、合集修改与高清任务，不依赖将logo_policy、颜色、材质外观或配件规则重复抄进摘要才能传递。must_preserve与forbidden_changes仍可突出最关键约束，不为压缩提示词删除其他必要身份字段。
 
 ## 筛选
 

@@ -52,6 +52,23 @@ test('queue respects tool concurrency, preserves result order and never retries 
   await assert.rejects(dispatchNativeBatch(jobs,()=>{},()=>{},0),/concurrency/);
 });
 
+test('V3.9: task ratio overrides the composite ratio and explicit sizes cannot conflict',()=>{
+  const hd={...job,task_role:'hd',canvas_ratio:'1:1'};
+  const paths={...cap,image_input:'paths'};
+  assert.equal(mapToolCall(hd,paths).arguments.ratio,'1:1');
+  const sizeCap={...paths,supported_fields:[...paths.supported_fields,'size'],fields:{...paths.fields,size:'size'},selection:{...paths.selection,size:'1024x1536'}};
+  assert.throws(()=>mapToolCall(hd,sizeCap),/size conflicts/);
+  assert.equal(mapToolCall(hd,{...sizeCap,task_settings:{hd:{size:'1024x1024'}}}).arguments.size,'1024x1024');
+});
+
+test('V3.9: omitted dispatcher concurrency starts one job at a time',async()=>{
+  let active=0,peak=0;
+  await dispatchNativeBatch([{tool_arguments:{}},{tool_arguments:{}}],async()=>{
+    peak=Math.max(peak,++active);await new Promise(resolve=>setImmediate(resolve));active--;return {};
+  },async()=>{});
+  assert.equal(peak,1);
+});
+
 const install = (...args) => spawnSync(process.execPath,[path.join(root,'scripts/install.mjs'),...args],{encoding:'utf8',timeout:60000,windowsHide:true});
 test('Chinese-path install, repeat install, conflicting upgrade backup and installed runtime',()=>{
   const target = path.join(temp,'安装 目录','skills','ahui-main-image-design');
@@ -59,15 +76,25 @@ test('Chinese-path install, repeat install, conflicting upgrade backup and insta
   assert.equal(JSON.parse(result.stdout).status,'installed');
   assert.equal(JSON.parse(result.stdout).image_generation_checked,false);
   assert.ok(fs.existsSync(path.join(target,'SKILL.md')));
-  assert.equal(install('--host','other','--target',target).status,0);
+  const before = fs.statSync(path.join(target,'SKILL.md')).mtimeMs;
+  const repeated = install('--host','other','--target',target);
+  assert.equal(repeated.status,0); assert.equal(JSON.parse(repeated.stdout).status,'skipped');
+  assert.equal(fs.statSync(path.join(target,'SKILL.md')).mtimeMs,before);
   fs.appendFileSync(path.join(target,'使用说明.md'),'\nOld local edit');
-  assert.equal(install('--host','other','--target',target).status,1);
-  const updated=install('--host','other','--target',target,'--replace'); assert.equal(updated.status,0,updated.stderr);
+  assert.equal(JSON.parse(install('--host','other','--target',target).stdout).status,'skipped');
+  const oldPackage=JSON.parse(fs.readFileSync(path.join(target,'package.json'),'utf8'));
+  fs.writeFileSync(path.join(target,'package.json'),JSON.stringify({...oldPackage,version:'3.9.1'}));
+  const updated=install('--host','other','--target',target); assert.equal(updated.status,0,updated.stderr);
+  assert.equal(JSON.parse(updated.stdout).status,'updated');
   const backup=JSON.parse(updated.stdout).backup;
   assert.ok(fs.readFileSync(path.join(backup,'使用说明.md'),'utf8').includes('Old local edit'));
   assert.ok(!path.relative(path.dirname(target),backup).startsWith('ahui-main-image-design'));
   const check=spawnSync(process.execPath,[path.join(target,'scripts/install.mjs'),'--check','--host','other'],{encoding:'utf8',timeout:60000});
   assert.equal(check.status,0,check.stderr); assert.equal(JSON.parse(check.stdout).local_runtime_ready,true);
+  fs.writeFileSync(path.join(target,'package.json'),JSON.stringify({...oldPackage,version:'3.10.0'}));
+  const newer=install('--host','other','--target',target);
+  assert.equal(newer.status,0,newer.stderr); assert.equal(JSON.parse(newer.stdout).status,'skipped_newer');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(target,'package.json'),'utf8')).version,'3.10.0');
 });
 test('Doubao Work, WorkBuddy and unknown agents install by real destination, not a brand whitelist',()=>{
   for (const host of ['doubao','doubao-work','workbuddy','future-agent']) {

@@ -20,9 +20,16 @@ export function validateCapability(cap) {
     const mapped = Object.values(cap.fields);
     need(mapped.every(k => text(k) && cap.supported_fields.includes(k) && !['__proto__','constructor','prototype'].includes(k)) && new Set(mapped).size === mapped.length,
       'Field map must use unique actual tool fields');
-    need(Object.keys(cap.fields).every(k => ['prompt','images','model','quality','size','transparent_background'].includes(k)), 'Unknown normalized field');
-    for (const k of ['model','quality','size']) if (cap.selection?.[k] != null) {
+    need(Object.keys(cap.fields).every(k => ['prompt','images','model','quality','size','ratio','transparent_background'].includes(k)), 'Unknown normalized field');
+    for (const k of ['model','quality','size','ratio']) if (cap.selection?.[k] != null) {
       need(text(cap.selection[k]) && cap.fields[k] && text(cap.selection.evidence), 'Selected settings need supported fields and evidence');
+    }
+    if (cap.task_settings != null) {
+      need(typeof cap.task_settings === 'object' && !Array.isArray(cap.task_settings), 'task_settings must describe composite and/or hd settings');
+      for (const [role, settings] of Object.entries(cap.task_settings)) {
+        need(['composite', 'hd'].includes(role) && settings && typeof settings === 'object', 'Unknown task settings role');
+        for (const [key, value] of Object.entries(settings)) need(['size', 'ratio'].includes(key) && text(value) && cap.fields[key] && text(cap.selection?.evidence || cap.schema_evidence), 'Task geometry needs actual supported fields and evidence');
+      }
     }
     if (cap.extra_arguments != null) {
       need(typeof cap.extra_arguments === 'object' && !Array.isArray(cap.extra_arguments), 'extra_arguments must be an object');
@@ -50,7 +57,20 @@ export function mapToolCall(job, capability, bindings = {}) {
   });
   const output = { ...(cap.extra_arguments || {}), [cap.fields.prompt]: args.prompt, [cap.fields.images]: images };
   if (cap.fields.transparent_background) output[cap.fields.transparent_background] = false;
-  for (const k of ['model','quality','size']) if (cap.selection?.[k] != null) output[cap.fields[k]] = cap.selection[k];
+  const role = job.task_role || (job.canvas_ratio === '1:1' ? 'hd' : 'composite');
+  const settings = { ...cap.selection, ...(cap.task_settings?.[role] || {}) };
+  if (job.canvas_ratio) {
+    if (cap.fields.ratio) settings.ratio = job.canvas_ratio;
+    for (const name of ['ratio', 'aspect_ratio', 'aspectRatio']) if (Object.hasOwn(cap.extra_arguments || {}, name)) output[name] = job.canvas_ratio;
+    const size = settings.size?.match(/^(\d+)x(\d+)$/i);
+    if (size) {
+      const [width, height] = job.canvas_ratio.split(':').map(Number);
+      need(Number(size[1]) * height === Number(size[2]) * width, 'Selected size conflicts with this task; provide a documented task_settings size for composite or hd');
+    }
+    for (const name of ['size', 'width', 'height']) if (Object.hasOwn(cap.extra_arguments || {}, name))
+      need(!['width', 'height'].includes(name) && !/^\d+x\d+$/i.test(String(cap.extra_arguments[name])), 'Move explicit geometry out of extra_arguments into supported per-task size/ratio fields');
+  }
+  for (const k of ['model','quality','size','ratio']) if (settings[k] != null) output[cap.fields[k]] = settings[k];
   return { tool: cap.tool, arguments: output };
 }
 

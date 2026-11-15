@@ -13,7 +13,8 @@ import { setStyleReferences, setCopyLanguage, presentDesign, approveDesign, insp
 import { currentComposite, claimCompositeRevision, saveCompositeRevision, failCompositeRevision } from '../scripts/composite-revisions.mjs';
 
 import { auditCreative, CREATIVE_CHECKS } from '../scripts/creative-direction.mjs';
-import { previewHD, approveHD, splitHD, claimHD, saveHD, saveHDResponse, failHD, finishHD, claimHDBatch, dispatchNativeBatch, SAMPLE_MESSAGE } from '../scripts/hd-workflow.mjs';
+import { previewHD, approveHD, splitHD, claimHD, saveHD, saveHDResponse, failHD, finishHD, claimHDBatch, dispatchNativeBatch } from '../scripts/hd-workflow.mjs';
+import { INFORMATION_TOPICS } from '../scripts/interaction.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 // Synthetic colored raster fixtures test IO/contracts, not product-generation quality.
@@ -24,7 +25,7 @@ const make = runPython(['-c',
 assert.equal(make.status,0,make.stderr);
 const cap = {available:true,tool:'image_gen__imagegen',explicit_image_paths:true};
 const json = (file, data) => fs.writeFileSync(file,JSON.stringify(data,null,2));
-function fixture({products=[0,1,2], platform='', userText='用户指定的产品', docs=[], hasStyle=true, mode='plan'}={}) {
+function fixture({products=[0,1,2], platform='Amazon US', userText='用户指定的产品', docs=[], hasStyle=true, mode='plan'}={}) {
   const input = {product_images:products.map(i => path.join(temp,`${i}.png`)),style_image:hasStyle?path.join(temp,'4.png'):null,platform,user_text:userText,information_files:docs,workflow_mode:mode,generation_request:mode==='generate'?{role:'user',message:'请制作六图合集',message_id:'MOCK-initial'}:null};
   const {run_dir:run} = inspectInputs(input,temp), m=read(path.join(run,'inputs.json'));
   const p={status:'reviewed',product_id:'MAIN',name:'合约测试对象',category:'模拟数据',identity_summary:'只用于程序测试的颜色块',
@@ -51,9 +52,22 @@ function fixture({products=[0,1,2], platform='', userText='用户指定的产品
     panel.angle_evidence={mode:i===1||i===4?'supported_inference':'visible_only',source_ids:['P1'],basis:'仅以模拟可见面说明角度证据契约',limits:'不展示未知背面'};
   });
   Object.assign(b.panels[0],{background:'#FFFFFF',product_only:true,title:'',subtitle:''});
+  if(m.design_profile==='domestic') {
+    s.visual_system={colors:'深绿主色、米白底、橙色仅强调数字，商品原色不变',typography:'黑体标题，主标题1／副标题0.6／正文0.4／标签0.35／备注0.28；同级统一',components:'标签圆角一致，底栏统一深绿，细线图标',spacing:'外边距4%，同类模块间距2%，标签内边距统一',photography:'统一自然柔光与适度反差，保留真实材质'};
+    b.global_style_lock_id=styleLock(s).id;
+    b.copy_locale=m.locale;
+    b.platform_rules={status:'design_assumption',basis:'MOCK domestic design assumption, not verified marketplace policy',first_panel_white_background:false,first_panel_marketing_copy:true,white_product_panels:[6]};
+    Object.assign(b.panels[0],{background:'浅绿空间',product_only:false,title:'清楚展示',copy_zh:'清楚展示'});
+    Object.assign(b.panels[5],{background:'#FFFFFF',product_only:true,title:'',subtitle:'',extra_copy:[],copy_zh:'无营销文案'});
+  }
   const interaction=read(path.join(run,'interaction.json'));
-  interaction.information={status:'sufficient',known:['Synthetic test data'],questions:[],response:null,notes:'Mock adequate information; not a real product assessment'};
-  if(!hasStyle) interaction.style={mode:'recommendation',status:'selected',options:['A','B','C'].map(id=>({id,name:id==='A'?s.name:`Style ${id}`,description:`Direction ${id}`,fit:`Reason ${id}`})),selected_id:'A',response:{role:'user',message:'A',message_id:'MOCK-style'}};
+  interaction.information={status:'sufficient',known:['Synthetic test data'],questions:[],response:null,notes:'Mock adequate information; not a real product assessment',
+    coverage:Object.fromEntries(INFORMATION_TOPICS.map(key=>[key,{status:'known',evidence:'Synthetic fixture explicitly supplies this topic; not a real product claim'}])),
+    angles:{distinct_count:products.length,status:products.length<3?'declined':'known',evidence:'Synthetic distinct-view fixtures',...(products.length<3?{response:{role:'user',message:'Use the existing synthetic views',message_id:'MOCK-no-more-views'}}:{})}};
+  if(!hasStyle) {
+    interaction.style_reference={status:'answered',question:'Any style reference?',response:{role:'user',message:'No style reference; recommend',message_id:'MOCK-no-reference'}};
+    interaction.style={mode:'recommendation',status:'selected',options:['A','B','C'].map(id=>({id,name:id==='A'?s.name:`Style ${id}`,description:`Direction ${id}`,fit:`Reason ${id}`})),selected_id:'A',response:{role:'user',message:'A',message_id:'MOCK-style'}};
+  }
   const persist=(refreshReview=true)=>{
     if(refreshReview) b.creative_review={digest:auditCreative(b,p,styleLock(s)).digest,checks:Object.fromEntries(CREATIVE_CHECKS.map(k=>[k,{status:'pass',notes:'MOCK semantic review; not visual validation'}])),accepted_repetitions:[]};
 json(path.join(run,'interaction.json'),interaction);json(path.join(run,'product-understanding.json'),p);json(path.join(run,'style-analysis.json'),s);json(path.join(run,'six-image-blueprint.json'),b);}; persist();
@@ -127,12 +141,13 @@ test('A: separate run IDs, originals retained byte-identically, output namespace
 });
 test('B: product required but style optional; US defaults recorded',()=>{
   assert.throws(()=>inspectInputs({product_images:[],style_image:path.join(temp,'4.png')},temp),/产品/);
-  const result=inspectInputs({product_images:[path.join(temp,'0.png')]},temp);
+  assert.throws(()=>inspectInputs({product_images:[path.join(temp,'0.png')],locale:'zh-CN'},temp),/上架到哪个平台/);
+  const result=inspectInputs({product_images:[path.join(temp,'0.png')],platform:'Amazon US'},temp);
   assert.equal(result.style,null);const m=read(path.join(result.run_dir,'inputs.json'));assert.equal(m.marketplace,'amazon.com');assert.equal(m.locale,'en-US');assert.equal(m.workflow_mode,'plan');
 });
 test('B: style cannot masquerade as product by duplicate path or copied content',()=>{
   fs.copyFileSync(path.join(temp,'4.png'),path.join(temp,'renamed.png'));
-  for (const image of ['4.png','renamed.png','style.bmp']) assert.throws(()=>inspectInputs({product_images:[path.join(temp,image)],style_image:path.join(temp,'4.png')},temp),/Style image/);
+  for (const image of ['4.png','renamed.png','style.bmp']) assert.throws(()=>inspectInputs({platform:'Amazon US',product_images:[path.join(temp,image)],style_image:path.join(temp,'4.png')},temp),/Style image/);
 });
 test('B: style text enters prompt; actual attachment list contains only products',()=>{
   const f=fixture();compile(f);const h=createHandoff(f.run,cap);
@@ -254,7 +269,7 @@ test('G: native data URL decoded and saved; remote URLs not silently downloaded'
   const result=saveNativeResponse(f.run,{image_url},'MOCK native data URL');assert.equal(result.format,'PNG');assert.equal(result.width,128);
 });
 test('CLI: init and outline in a Chinese path create pending forms that cannot generate',()=>{
-  const ws=path.join(temp,'中文工作区');fs.mkdirSync(ws);const input=path.join(ws,'输入.json');json(input,{product_images:[path.join(temp,'0.png')],style_image:path.join(temp,'4.png')});
+  const ws=path.join(temp,'中文工作区');fs.mkdirSync(ws);const input=path.join(ws,'输入.json');json(input,{platform:'Amazon US',product_images:[path.join(temp,'0.png')],style_image:path.join(temp,'4.png')});
   const call=(...args)=>spawnSync(process.execPath,[path.join(root,'scripts/cli.mjs'),...args],{encoding:'utf8',timeout:15000});
   const initialized=call('init','--input',input,'--workspace',ws);assert.equal(initialized.status,0,initialized.stderr);const run=JSON.parse(initialized.stdout).run_dir;
   assert.equal(call('outline','--run',run).status,0);assert.equal(read(path.join(run,'product-understanding.json')).status,'pending');
@@ -375,7 +390,7 @@ test('V2.1: pending information, silence and missing style selection still block
 test('V2.1: partial and no-information replies continue to preview; CHAT facts retain evidence',()=>{
   for(const status of ['answered','declined']){
     const f=fixture({userText:''});
-    f.interaction.information={status,known:['Visible form'],questions:['What is included?'],response:{role:'user',message:status==='answered'?'Only the product is included':'No more information; use the photo',message_id:'MOCK-followup'},notes:'Other specifications remain unknown'};
+    f.interaction.information={...f.interaction.information,status,known:['Visible form'],questions:['What is included?'],response:{role:'user',message:status==='answered'?'Only the product is included':'No more information; use the photo',message_id:'MOCK-followup'},notes:'Other specifications remain unknown'};
     if(status==='answered')f.p.facts.push({id:'F2',statement:'Only the product is included',source:'user',source_ids:['CHAT'],evidence:'Only the product is included'});
     f.persist();assert.equal(presentDesign(f.run).can_generate,false);assert.throws(()=>compilePlan(f.run),/approval/);
     approve(f);assert.doesNotThrow(()=>compilePlan(f.run));
@@ -396,7 +411,7 @@ test('V2.1: only the standalone exact phrase approves, even when intent claims a
 test('V2.1: legacy ready CLI only previews; automatic records cannot reach any generation entry',async()=>{
   const f=fixture({mode:'generate',hasStyle:false});
   const call=(command)=>spawnSync(process.execPath,[path.join(root,'scripts/cli.mjs'),command,'--run',f.run],{encoding:'utf8',timeout:15000});
-  const ready=call('ready');assert.equal(ready.status,0,ready.stderr);const state=JSON.parse(ready.stdout);
+  const ready=call('ready');assert.equal(ready.status,0,ready.stderr);const receipt=JSON.parse(ready.stdout),state=read(receipt.result_path);
   assert.equal(state.task_status,'awaiting_design_approval');assert.equal(state.can_generate,false);assert.equal(call('compile').status,1);
   json(path.join(f.run,'design-approval.json'),{...state,authorization_mode:'automatic',status:'approved',approved:true,can_generate:true,approved_version:state.version});
   assert.throws(()=>compilePlan(f.run),/approval/);assert.throws(()=>createHandoff(f.run,cap),/approval/);assert.throws(()=>claimGeneration(f.run,cap),/approval/);
@@ -415,8 +430,8 @@ test('V2.1: entire English copy is previewed and compiled; translation is previe
 });
 
 test('V2.1: fixed platform, default English, count and white main image reject conflicting input',()=>{
-  for(const change of [{platform:'Taobao'},{marketplace:'amazon.de'},{panel_count:7},{output_count:1}])
-    assert.throws(()=>inspectInputs({product_images:[path.join(temp,'0.png')],...change},temp));
+  for(const change of [{platform:'TikTok Shop'},{marketplace:'amazon.de'},{panel_count:7},{output_count:1}])
+    assert.throws(()=>inspectInputs({platform:'Amazon US',product_images:[path.join(temp,'0.png')],...change},temp));
   const f=fixture({platform:'亚马逊'});f.b.panels[1].extra_copy=['中文标签'];f.persist();assert.throws(()=>presentDesign(f.run),/English/);
   f.b.panels[1].extra_copy=[];f.b.panels[0].extra_copy=['Promotion'];f.persist();assert.throws(()=>presentDesign(f.run),/White listing/);
   f.b.panels[0].extra_copy=[];f.b.panels[0].background='#EEEEEE';f.persist();assert.throws(()=>presentDesign(f.run),/White listing/);
@@ -504,7 +519,7 @@ test('V2.2: older run contracts cannot bypass the updated planning requirements'
   const f=fixture();compile(f);
   json(path.join(f.run,'inputs.json'),{...f.m,version:'2.1.0'});
   for(const entry of [()=>presentDesign(f.run),()=>compilePlan(f.run),()=>createHandoff(f.run,cap),()=>claimGeneration(f.run,cap)])
-    assert.throws(entry,/V3.3 requires a new run/);
+    assert.throws(entry,/V3.6 requires a new run/);
   assert.ok(!fs.existsSync(path.join(f.run,'generation-claim.json')));
 });
 
@@ -523,7 +538,7 @@ const userEdit = (id='MOCK-edit') => ({user_request:{role:'user',message:'请修
 const savePanel = (f,index,attempt=1,side=1254) => saveHD(f.run,index,attempt,path.join(temp,`hd${side}.png`),`MOCK-result-${index}-${attempt}`);
 
 test('V3.3: initial multiple references are isolated, validated and all analyzed',()=>{
-  const input={product_images:[path.join(temp,'0.png')],style_images:[path.join(temp,'3.png'),path.join(temp,'4.png')],locale:'ja-JP'};
+  const input={platform:'Amazon US',product_images:[path.join(temp,'0.png')],style_images:[path.join(temp,'3.png'),path.join(temp,'4.png')],locale:'ja-JP'};
   const result=inspectInputs(input,temp), m=read(path.join(result.run_dir,'inputs.json'));
   assert.equal(m.locale,'ja-JP');assert.equal(m.styles.length,2);
   for(const s of m.styles) assert.deepEqual(fs.readFileSync(path.join(result.run_dir,s.path)),fs.readFileSync(s.original_path));
@@ -609,7 +624,7 @@ test('V3.3: targeted HD language changes require confirmation and preserve other
 
 test('V3.1: sample preview contains only image and fixed message, no repeated copy or QA dependency',()=>{
   const f=sample(), preview=previewHD(f.run);
-  assert.equal(preview.preview,SAMPLE_MESSAGE);assert.equal(preview.panels,undefined);
+  assert.match(preview.preview,/这是六宫格初稿/);assert.match(preview.preview,/继续做高清图/);assert.equal(preview.panels,undefined);
   assert.ok(fs.existsSync(preview.image_path));assert.ok(!preview.preview.includes('Simple Form'));
   assert.ok(!fs.existsSync(path.join(f.run,'composite-qa.json')));
   assert.throws(()=>splitHD(f.run),/HD approval/);
@@ -653,7 +668,7 @@ test('V3.1: dispatcher starts all six before any resolution; out-of-order result
   const all=dispatch(batch.jobs,(_args,job)=>{starts.push(job.index);return new Promise((resolve,reject)=>pending.set(job.index,{resolve,reject}));},async(job,result)=>{
     assert.equal(result.index,job.index);completions.push(job.index);
     savePanel(f,job.index,job.attempt);
-  });
+  },6);
   assert.deepEqual(starts,[1,2,3,4,5,6]);assert.deepEqual(completions,[]);
   for(const index of [6,2,5,1,4,3]){pending.get(index).resolve({index});await new Promise(resolve=>setImmediate(resolve));}
   const settled=await all;assert.ok(settled.every(s=>s.status==='fulfilled'));
@@ -801,4 +816,169 @@ test('V3.3 share: generic host completes claimed composite, revision and six HD 
   assert.equal(result.panels.length,6);
   assert.ok(result.panels.every(p=>p.result.host==='mock-agent' && p.result.model==='mock-quality'));
   assert.throws(()=>claimHDBatch(f.run,portable),/Batch already started/);
+});
+
+
+test('V3.4: missing platform blocks before allocating a run, even with explicit copy language',()=>{
+  const before=fs.readdirSync(path.join(temp,'work','ahui-main-image-design'));
+  for(const locale of ['zh-CN','en-US']) assert.throws(()=>inspectInputs({product_images:[path.join(temp,'0.png')],locale,user_text:'请做主图'},temp),/上架到哪个平台/);
+  assert.deepEqual(fs.readdirSync(path.join(temp,'work','ahui-main-image-design')),before);
+});
+
+test('V3.4: domestic preview and initial handoff retain rich first panel, last white panel and set standards',()=>{
+  const f=fixture({platform:'淘宝'});
+  assert.equal(f.m.design_profile,'domestic');assert.equal(f.m.locale,'zh-CN');
+  const preview=presentDesign(f.run).preview;
+  assert.match(preview,/国内电商：淘宝/);assert.match(preview,/整套视觉规范/);assert.match(preview,/白底商品图编号：6/);
+  assert.doesNotMatch(preview,/默认流程：亚马逊|图片文案默认英文/);
+  compile(f);const h=createHandoff(f.run,cap);
+  assert.ok(h.tool_arguments.prompt.includes(JSON.stringify({主标题:'清楚展示',副标题:'',辅助文案:[]})));
+  for(const value of Object.values(f.s.visual_system)) assert.ok(h.tool_arguments.prompt.includes(value));
+  assert.doesNotMatch(h.tool_arguments.prompt,/1张白底首图加5张副图|首格RGB纯白背景/);
+  assert.equal(h.tool_arguments.referenced_image_paths.length,3);
+});
+
+test('V3.4: domestic outline starts with visual-system fields and rear white role; Amazon outline is unchanged',()=>{
+  for(const platform of ['淘宝','Amazon US']) {
+    const {run_dir}=inspectInputs({platform,product_images:[path.join(temp,'0.png')]},temp);
+    const call=spawnSync(process.execPath,[path.join(root,'scripts/cli.mjs'),'outline','--run',run_dir],{encoding:'utf8'});
+    assert.equal(call.status,0,call.stderr);
+    const b=read(path.join(run_dir,'six-image-blueprint.json')),s=read(path.join(run_dir,'style-analysis.json'));
+    const domestic=platform==='淘宝';
+    assert.equal(b.panels[domestic?5:0].background,'#FFFFFF');
+    assert.equal(Boolean(s.visual_system),domestic);
+    assert.equal(b.platform_rules.first_panel_white_background,!domestic);
+  }
+});
+
+test('V3.4: domestic standards are required and any change invalidates previous approval',()=>{
+  const f=fixture({platform:'京东'});delete f.s.visual_system.typography;f.b.global_style_lock_id=styleLock(f.s).id;f.persist();
+  assert.throws(()=>presentDesign(f.run),/visual_system.typography/);
+  const g=fixture({platform:'京东'});compile(g);
+  g.s.visual_system.colors='新配色';g.b.global_style_lock_id=styleLock(g.s).id;g.persist();
+  assert.throws(()=>createHandoff(g.run,cap),/Design changed/);
+});
+
+test('V3.4: domestic white roles and first-panel text restrictions cannot contradict the plan',()=>{
+  const f=fixture({platform:'抖音'});
+  f.b.panels[5].title='不允许';assert.throws(()=>compile(f),/White listing panel 6/);
+  f.b.panels[5].title='';f.b.platform_rules.first_panel_white_background=true;
+  assert.throws(()=>compile(f),/role conflicts/);
+  f.b.platform_rules.first_panel_white_background=false;f.b.platform_rules.first_panel_marketing_copy=false;
+  assert.throws(()=>compile(f),/marketing copy is not allowed/);
+  f.b.panels[0].title='';assert.doesNotThrow(()=>compile(f));
+});
+
+test('V3.4: white product position follows confirmed domestic roles rather than a fixed last index',()=>{
+  const f=fixture({platform:'天猫'});
+  f.b.platform_rules.white_product_panels=[3];
+  Object.assign(f.b.panels[2],{background:'#FFFFFF',product_only:true,title:'',subtitle:'',extra_copy:[]});
+  Object.assign(f.b.panels[5],{background:'浅绿',product_only:false,title:'外观细节'});
+  compile(f);claimGeneration(f.run,cap);saveResult(f.run,path.join(temp,'grid.png'),'MOCK-domestic-grid');hdStart(f);
+  const third=claimHD(f.run,3,cap),sixth=claimHD(f.run,6,cap);
+  assert.match(third.tool_arguments.prompt,/Panel 3: pure white/);
+  assert.doesNotMatch(sixth.tool_arguments.prompt,/Panel 6: pure white/);
+  assert.match(sixth.tool_arguments.prompt,/外观细节/);
+});
+
+test('V3.4: copy language changes preserve domestic platform and require renewed copy approval',()=>{
+  const f=fixture({platform:'拼多多'});compile(f);
+  setCopyLanguage(f.run,{locale:'en-US',user_request:{role:'user',message:'改成英文版',message_id:'MOCK-domestic-language'}});
+  assert.equal(read(path.join(f.run,'inputs.json')).design_profile,'domestic');
+  assert.equal(read(path.join(f.run,'inputs.json')).marketplace,'pinduoduo');
+  assert.throws(()=>createHandoff(f.run,cap),/language|changed|Copy/i);
+  f.b.copy_locale='en-US';f.b.panels[0].title='Clear Form';f.persist();approve(f);compilePlan(f.run);
+  const h=createHandoff(f.run,cap);assert.match(h.tool_arguments.prompt,/Clear Form/);assert.match(h.tool_arguments.prompt,/国内电商：拼多多/);
+});
+
+test('V3.4: domestic sample revisions keep first-panel copy and reject copy on the white panel',()=>{
+  const f=fixture({platform:'淘宝'});compile(f);claimGeneration(f.run,cap);saveResult(f.run,path.join(temp,'grid.png'),'MOCK-domestic-grid');
+  const panels=currentComposite(f.run).panels;
+  const bad=structuredClone(panels);bad[5].title='白底不应有文案';
+  assert.throws(()=>claimCompositeRevision(f.run,{...userEdit('MOCK-domestic-bad'),panels:bad,fact_review:'MOCK facts'},cap),/White main/);
+  panels[0].title='新的外观标题';
+  const revised=claimCompositeRevision(f.run,{...userEdit('MOCK-domestic-edit'),panels,fact_review:'MOCK facts'},cap);
+  assert.match(revised.tool_arguments.prompt,/新的外观标题/);assert.match(revised.tool_arguments.prompt,/白底商品格：6/);
+  assert.doesNotMatch(revised.tool_arguments.prompt,/Panel 1 remains a white/);
+  for(const value of Object.values(f.s.visual_system)) assert.ok(revised.tool_arguments.prompt.includes(value));
+});
+
+test('V3.4: domestic post-sample translation permits first-panel copy, requires confirmation and protects white roles',()=>{
+  const f=fixture({platform:'淘宝'});compile(f);claimGeneration(f.run,cap);saveResult(f.run,path.join(temp,'grid.png'),'MOCK-domestic-grid');
+  const panels=currentComposite(f.run).panels.map(p=>({...p,title:p.title?'Clear Form':'',subtitle:'',extra_copy:[]}));
+  const request={...userEdit('MOCK-translate-domestic'),locale:'en-US',panels,fact_review:'MOCK copy checked'};
+  assert.throws(()=>claimCompositeRevision(f.run,request,cap),/confirmation/i);
+  const shown=previewCopyChange(f.run,request);assert.match(shown.preview,/Clear Form/);
+  request.copy_confirmation={role:'user',message:'确认生成',message_id:'MOCK-domestic-translation-approved',digest:shown.digest};
+  const revised=claimCompositeRevision(f.run,request,cap);assert.equal(revised.locale,'en-US');
+  const bad={...request,panels:structuredClone(panels)};bad.panels[5].title='No';
+  assert.throws(()=>previewCopyChange(f.run,bad),/White main/);
+});
+
+test('V3.4: all six domestic HD tasks receive shared standards and correct individual roles',()=>{
+  const f=fixture({platform:'京东'});compile(f);claimGeneration(f.run,cap);saveResult(f.run,path.join(temp,'grid.png'),'MOCK-domestic-grid');hdStart(f);
+  const batch=claimHDBatch(f.run,cap);
+  for(const job of batch.jobs) {
+    assert.match(job.tool_arguments.prompt,/square 1:1 京东 image/);
+    for(const value of Object.values(f.s.visual_system)) assert.ok(job.tool_arguments.prompt.includes(value));
+    assert.doesNotMatch(job.tool_arguments.prompt,/Amazon US listing image|MAIN IMAGE:/);
+  }
+  assert.match(batch.jobs[0].tool_arguments.prompt,/清楚展示/);
+  assert.match(batch.jobs[5].tool_arguments.prompt,/Panel 6: pure white/);
+  savePanel(f,1);savePanel(f,6);
+  const white=currentComposite(f.run).panels[5];
+  assert.throws(()=>claimHD(f.run,6,cap,{...userEdit('MOCK-bad-white-edit'),copy:{...white,title:'No'},fact_review:'MOCK'}),/White main/);
+  const first=currentComposite(f.run).panels[0];
+  const revised=claimHD(f.run,1,cap,{...userEdit('MOCK-first-edit'),copy:{...first,title:'更新标题'},fact_review:'MOCK'});
+  assert.match(revised.tool_arguments.prompt,/更新标题/);
+});
+
+test('V3.9: first-round coverage cannot be replaced by a sufficient-information note',()=>{
+  const f=fixture();delete f.interaction.information.coverage.specifications;f.persist();
+  assert.throws(()=>presentDesign(f.run),/specifications/);
+  const g=fixture({products:[0]});g.interaction.information.angles={distinct_count:1,status:'known',evidence:'One known view'};g.persist();
+  assert.throws(()=>presentDesign(g.run),/more product views/);
+});
+
+test('V3.9: full identity and four per-panel directions reach every HD task',()=>{
+  const f=sample(f=>{f.p.identity_lock.logo_policy='Unique wordmark preservation rule';});
+  assert.ok(createHandoff(f.run,cap).tool_arguments.prompt.includes(f.p.identity_lock.logo_policy));
+  hdStart(f);const batch=claimHDBatch(f.run,cap);
+  for(const job of batch.jobs) {
+    const panel=f.b.panels[job.index-1];
+    for(const field of ['lighting_materials','scene_physics','presentation','composition']) assert.ok(job.tool_arguments.prompt.includes(panel[field]));
+    assert.doesNotMatch(job.tool_arguments.prompt,/undefined/);
+    assert.equal(job.canvas_ratio,'1:1');
+  }
+});
+
+test('V3.9: initial composite save resumes after the PNG exists but metadata is missing',()=>{
+  const f=fixture();compile(f);claimGeneration(f.run,cap);
+  const dest=path.join(f.m.workspace,'outputs','ahui-main-image-design',f.m.run_id,'composite-preview.png');
+  fs.mkdirSync(path.dirname(dest),{recursive:true});imageIO({action:'save_png',source:path.join(temp,'grid.png'),destination:dest});
+  const first=saveResult(f.run,path.join(temp,'grid.png'),'MOCK-resume-result');
+  assert.deepEqual(saveResult(f.run,path.join(temp,'grid.png'),'MOCK-same-result'),first);
+});
+
+test('V3.9: a second targeted edit inherits the latest successful design and previous adjustments',()=>{
+  const f=sample();hdStart(f);claimHDBatch(f.run,cap);savePanel(f,2);
+  const first=claimHD(f.run,2,cap,{user_request:{role:'user',message:'Use a dark blue background',message_id:'MOCK-blue-background'}});
+  const result=savePanel(f,2,first.attempt);
+  const next=claimHD(f.run,2,cap,{user_request:{role:'user',message:'Change only the title',message_id:'MOCK-title-after-blue'},copy:{...first.copy,title:'Updated title'},fact_review:'Synthetic appearance facts'});
+  assert.equal(next.tool_arguments.referenced_image_paths[0],result.path);
+  assert.ok(next.tool_arguments.prompt.includes('Use a dark blue background'));
+  assert.equal(next.copy.title,'Updated title');
+});
+
+test('V3.9: one confirmed six-panel translation survives its own dispatch progress',()=>{
+  const f=sample();hdStart(f);claimHDBatch(f.run,cap);for(let index=1;index<=6;index++)savePanel(f,index);
+  const panels=currentComposite(f.run).panels.map(p=>({...p,title:p.title?'更新文案':''}));
+  const request={user_request:{role:'user',message:'Translate all six to Chinese',message_id:'MOCK-full-set-translation'},locale:'zh-CN',panels,fact_review:'Synthetic unchanged product facts'};
+  const shown=previewCopyChange(f.run,request);
+  request.copy_confirmation={role:'user',message:'确认生成',message_id:'MOCK-confirm-full-set',digest:shown.digest};
+  for(let index=1;index<=6;index++) {
+    const claim=claimHD(f.run,index,cap,request);
+    assert.equal(claim.copy_batch_digest,shown.digest);assert.equal(claim.locale,'zh-CN');savePanel(f,index,claim.attempt);
+  }
+  assert.throws(()=>claimHD(f.run,2,cap,request),/already submitted/);
 });

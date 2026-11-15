@@ -9,7 +9,9 @@ import { panelDirection } from './creative-direction.mjs';
 import { buildPrompt } from './creative-brief.mjs';
 import { normalizeLocale, languageName, isChinese, validateVisibleCopy } from './copy-language.mjs';
 import { evidenceTagsForRole } from './reference-roles.mjs';
-import { initialInteraction, validateInteraction, userMessage } from './interaction.mjs';
+import { initialInteraction, validateInteraction, validateStyleDecision, presentStyleOptions, confirmStyleOptions, userMessage } from './interaction.mjs';
+
+import { resolvePlatform, isDomestic, validateDomesticStyle, validatePlatformRules, visualSystemText } from './market-profile.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export const ID = 'ahui-main-image-design';
@@ -55,9 +57,8 @@ export function inspectInputs(input, workspace = process.cwd()) {
   need(!(input.style_image && input.style_images?.length), 'Use style_images or legacy style_image, not both');
   const stylePaths = input.style_images?.length ? input.style_images : (input.style_image ? [input.style_image] : []);
   need(input.product_images.every(p => typeof p === 'string' && path.isAbsolute(p)) && stylePaths.every(p => typeof p === 'string' && path.isAbsolute(p)), 'Image paths must be absolute');
-  need(!input.platform || ['amazon', 'amazon us', 'amazon.com', '亚马逊', '亚马逊美国站', '美国站'].includes(input.platform.trim().toLowerCase()), 'This version targets Amazon US');
-  need(!input.marketplace || input.marketplace === 'amazon.com', 'Amazon.com only');
-  const locale = normalizeLocale(input.locale || 'en-US');
+  const profile = resolvePlatform(input);
+  const locale = normalizeLocale(input.locale || (isDomestic(profile) ? 'zh-CN' : 'en-US'));
   need(input.panel_count == null || input.panel_count === 6, 'Exactly six panels required');
   need(input.output_count == null || input.output_count === 6, 'Exactly six final outputs required');
   need(!input.workflow_mode || ['generate', 'plan'].includes(input.workflow_mode), 'workflow_mode must be generate or plan');
@@ -89,10 +90,10 @@ export function inspectInputs(input, workspace = process.cwd()) {
     return { id: `D${i + 1}`, path: target, text: ['.txt', '.md', '.json'].includes(ext) ? fs.readFileSync(file, 'utf8') : ext === '.docx' ? imageIO({ action: 'read_docx', source: file }).text : null };
   });
   const styles = stylePaths.map((_, i) => save(input.product_images.length + i, 'style'));
-  const m = { skill: ID, version: '3.3.1', run_id: runId, workspace: path.resolve(workspace),
+  const m = { skill: ID, version: '3.6.0', run_id: runId, workspace: path.resolve(workspace),
     products: input.product_images.map((_, i) => save(i, 'product')), styles, style: styles[0] || null,
-    user_text: input.user_text || '', information_files: docs, platform: 'Amazon US', marketplace: 'amazon.com', locale,
-    workflow_mode: input.workflow_mode || 'plan', generation_request: input.generation_request || null,
+    user_text: input.user_text || '', information_files: docs, ...profile, locale,
+    intake_contract: '3.9', workflow_mode: input.workflow_mode || 'plan', generation_request: input.generation_request || null,
     main_product_id: input.main_product_id || null };
   write(runFile(run, 'inputs.json'), m);
   write(runFile(run, 'interaction.json'), initialInteraction(m));
@@ -114,6 +115,7 @@ export function setStyleReferences(run, request) {
   });
   replaceJSON(runFile(run, 'inputs.json'), { ...m, styles, style: styles[0], style_request: request.user_request });
   const interaction = read(runFile(run, 'interaction.json'));
+  interaction.style_reference = { status: 'supplied', question: '', response: request.user_request };
   interaction.style = { mode: 'reference', status: 'ready', options: [], selected_id: null, response: request.user_request };
   replaceJSON(runFile(run, 'interaction.json'), interaction);
   if (fs.existsSync(runFile(run, 'style-analysis.json'))) {
@@ -205,6 +207,7 @@ export function styleLock(s) {
     lighting: s.lighting, background: s.background, composition: s.composition,
     commercial_aesthetics: s.commercial_aesthetics, transferable: s.transferable,
     do_not_copy: s.do_not_copy, set_rules: s.set_rules,
+    ...(s.visual_system ? { visual_system: s.visual_system } : {}),
     precedence: 'product_facts > approved_copy_and_content > global_style > creative_layout' };
 }
 
@@ -264,24 +267,44 @@ export function validateBlueprint(b, p, lock, m) {
   }
   validateCreative(b, p, lock, need);
   need(new Set(b.panels.map(p => p.buyer_question)).size === 6, 'Six distinct buyer questions required');
-  need(b.platform_rules && typeof b.platform_rules.first_panel_white_background === 'boolean', 'Record platform main-image rule');
-  if (m.platform) { text(b.platform_rules.basis, 'platform rule evidence'); need(b.platform_rules.status === 'confirmed', 'Confirm applicable platform rules before generation'); }
-  need(m.marketplace === 'amazon.com', 'Amazon US profile required');
+  validatePlatformRules(m, b);
   normalizeLocale(m.locale);
   need((b.copy_locale || 'en-US') === m.locale, 'Copy language changed; rewrite all copy and set copy_locale before preview');
-  need(b.platform_rules.first_panel_white_background, 'Amazon listing main image needs white background');
   for (const panel of b.panels) validateVisibleCopy(panel, m.locale);
-  if (b.platform_rules.first_panel_white_background) {
-    const first = b.panels[0];
-    need(first.background === '#FFFFFF' && !first.title && !first.subtitle && first.extra_copy.length === 0 && first.product_only === true, 'White listing first panel: #FFFFFF, product only, no marketing copy');
-  }
+}
+
+export function previewStyleChoices(run) {
+  const m = manifest(run); unchanged(run, m);
+  need(!fs.existsSync(runFile(run, 'generation-claim.json')), 'Generation already claimed; use the composite revision workflow for style changes');
+  const interaction = read(runFile(run, 'interaction.json'));
+  const result = presentStyleOptions(m, interaction);
+  replaceJSON(runFile(run, 'interaction.json'), interaction);
+  invalidateChangedDesign(run);
+  return result;
+}
+
+export function confirmStyleChoice(run, request) {
+  const m = manifest(run); unchanged(run, m);
+  need(!fs.existsSync(runFile(run, 'generation-claim.json')), 'Generation already claimed; use the composite revision workflow for style changes');
+  const interaction = read(runFile(run, 'interaction.json'));
+  const result = confirmStyleOptions(m, interaction, request);
+  replaceJSON(runFile(run, 'interaction.json'), interaction);
+  invalidateChangedDesign(run);
+  return result;
+}
+
+export function recordStyleDecision(run) {
+  const m = manifest(run), style = read(runFile(run, 'style-analysis.json'));
+  unchanged(run, m);
+  validateStyleDecision(m, read(runFile(run, 'interaction.json')), style);
+  return styleLock(style);
 }
 
 export function reviewCreativePlan(run) {
   const m = manifest(run); unchanged(run, m);
   const p = read(runFile(run, 'product-understanding.json'));
   validateProduct(p, m);
-  const lock = styleLock(read(runFile(run, 'style-analysis.json')));
+  const lock = recordStyleDecision(run);
   const b = read(runFile(run, 'six-image-blueprint.json'));
   need(Array.isArray(b.panels) && b.panels.length === 6, 'Exactly six logical panels required');
   return auditCreative(b, p, lock);
@@ -289,12 +312,14 @@ export function reviewCreativePlan(run) {
 
 function designSnapshot(run, limits = {}) {
   const m = manifest(run); unchanged(run, m);
-  need(m.version === '3.3.1', 'V3.3 requires a new run with current design and approval');
+  need(m.version === '3.6.0', 'V3.6 requires a new run with current design and approval');
   const p = read(runFile(run, 'product-understanding.json'));
   const s = read(runFile(run, 'style-analysis.json'));
   const b = read(runFile(run, 'six-image-blueprint.json'));
   const interaction = validateInteraction(m, read(runFile(run, 'interaction.json')), s);
-  validateProduct(p, m); const lock = styleLock(s); validateBlueprint(b, p, lock, m);
+  validateProduct(p, m);
+  if (isDomestic(m)) validateDomesticStyle(s);
+  const lock = styleLock(s); validateBlueprint(b, p, lock, m);
   const prepared = fs.existsSync(runFile(run, 'prepared-references.json')) ? read(runFile(run, 'prepared-references.json')) : m.products;
   const selection = selectReferences(p, { ...m, products: prepared }, limits, b.panels.flatMap(x => [...x.angle_evidence.source_ids, ...x.source_ids]));
   for (const panel of b.panels) need(panel.angle_evidence.source_ids.every(id => selection.selected.some(x => x.id === id)), `Panel ${panel.index} angle evidence not selected; adjust references or replan before approval`);
@@ -333,11 +358,14 @@ export function presentDesign(run, limits = {}) {
     modified_at: new Date().toISOString(), selection: snap.selection, panels: snap.b.panels,
   };
   const cell = value => String(value || '—').replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ');
-  const knowledgeSummary = `策划依据：本地亚马逊主图知识库。${snap.b.knowledge_basis.application}\n\n`;
+  const domestic = isDomestic(snap.m);
+  const knowledgeSummary = `策划依据：${domestic ? '本地国内电商设计策略' : '本地亚马逊主图知识库'}。${snap.b.knowledge_basis.application}\n\n`;
+  const flowSummary = domestic ? `国内电商：${snap.m.platform}；识别依据：${snap.m.platform_basis}；图片语言：${languageName(snap.m.locale)}。交付：六张独立图，白底商品图编号：${snap.b.platform_rules.white_product_panels.join('、') || '无'}。平台依据（${snap.b.platform_rules.status === 'confirmed' ? '已核对' : '设计假设，非上架合规结论'}）：${snap.b.platform_rules.basis}；` : `默认流程：亚马逊主图；图片语言：${languageName(snap.m.locale)}。交付：1张白底首图＋5张副图；`;
+  const systemSummary = domestic ? `整套视觉规范：${visualSystemText(snap.s)}\n\n` : '';
   const chinese = isChinese(snap.m.locale);
-  const preview = `产品：${snap.p.name}\n\n默认流程：亚马逊主图；图片语言：${languageName(snap.m.locale)}。交付：1张白底首图＋5张副图；先审阅2列×3行样稿，确认后交付六张独立正方形图片，原生2K优先、约1K可接受，不强制放大。\n\n风格：${snap.s.name}\n${snap.s.reference_intent.basis}\n采用：${snap.s.transferable.join("；")}\n不迁移：${snap.s.do_not_copy.join("；")}\n执行标准：${snap.s.set_rules.join("；")}\n\n${knowledgeSummary}| 图片 | 核心卖点 | 最终上图文案（${languageName(snap.m.locale)}，全部） | ${chinese ? '' : '中文释义 | '}场景、动作与构图 |\n|---|---|---|${chinese ? '' : '---|'}---|\n` +
+  const preview = `产品：${snap.p.name}\n\n${flowSummary}先审阅2列×3行样稿，确认后交付六张独立正方形图片，原生2K优先、约1K可接受，不强制放大。\n\n风格：${snap.s.name}\n${snap.s.reference_intent.basis}\n采用：${snap.s.transferable.join("；")}\n不迁移：${snap.s.do_not_copy.join("；")}\n执行标准：${snap.s.set_rules.join("；")}\n\n${systemSummary}${knowledgeSummary}| 图片 | 核心卖点 | 最终上图文案（${languageName(snap.m.locale)}，全部） | ${chinese ? '' : '中文释义 | '}场景、动作与构图 |\n|---|---|---|${chinese ? '' : '---|'}---|\n` +
     snap.b.panels.map(x => `| ${String(x.index).padStart(2, '0')} | ${[`${x.purpose}：${x.objective}`, [x.title, x.subtitle, ...x.extra_copy].filter(Boolean).join(' / ') || '无额外营销文案', ...(chinese ? [] : [x.copy_zh]), panelDirection(x)].map(cell).join(' | ')} |`).join('\n') +
-    '\n\n图片文案默认英文。想换语言，直接说“改成中文版”或告诉我需要哪种语言；我会重新列出全部文案，请你确认后再生成。\n\n以上为当前完整方案。可提出修改；全部认可后请单独回复“确认生成”。修改后需重新确认。\n';
+    (domestic ? '\n\n国内版默认中文。想换语言直接告诉我；只切换文案语言，不改变已确认平台。会重列全部文案，请你确认后再生成。' : '\n\n图片文案默认英文。想换语言，直接说“改成中文版”或告诉我需要哪种语言；我会重新列出全部文案，请你确认后再生成。') + '\n\n以上为当前完整方案。可提出修改；全部认可后请单独回复“确认生成”。修改后需重新确认。\n';
   fs.writeFileSync(runFile(run, 'design-preview.md'), preview);
   replaceJSON(file, state);
   return { ...state, preview };
@@ -394,7 +422,9 @@ export function compilePlan(run, limits = {}) {
   const s = read(runFile(run, 'style-analysis.json'));
   const b = read(runFile(run, 'six-image-blueprint.json'));
   const interaction = validateInteraction(m, read(runFile(run, 'interaction.json')), s);
-  validateProduct(p, m); const lock = styleLock(s); validateBlueprint(b, p, lock, m);
+  validateProduct(p, m);
+  if (isDomestic(m)) validateDomesticStyle(s);
+  const lock = styleLock(s); validateBlueprint(b, p, lock, m);
   const prepared = fs.existsSync(runFile(run, 'prepared-references.json')) ? read(runFile(run, 'prepared-references.json')) : m.products;
   need(prepared.length === m.products.length, 'Prepared reference membership mismatch');
   for (const asset of prepared) {
@@ -408,13 +438,13 @@ export function compilePlan(run, limits = {}) {
   for (const panel of b.panels) need(panel.source_ids.every(id => selection.selected.some(s => s.id === id)), `Panel ${panel.index} product evidence not selected; adjust planning/references before generation`);
   const approval = requireApproval(run);
   need(JSON.stringify(selection) === JSON.stringify(approval.selection), 'Reference selection changed; present design again');
-  const prompt = buildPrompt(p, lock, b, m.platform || 'Amazon US', m.locale);
+  const prompt = buildPrompt(p, lock, b, m.platform || 'Amazon US', m.locale, m);
   for (const s of m.styles || []) need(!prompt.includes(s.original_path) && !prompt.includes(s.path), 'Style path leaked into prompt');
   const job = { id: 'COMPOSITE-01', provider: 'host-tool', prompt_path: 'composite-generation-prompt.md', prompt_sha256: hash(prompt), source_images: selection.selected,
     canvas: { columns: 2, rows: 3, panels: 6, panel_ratio: '1:1', canvas_ratio: '2:3', requested_size_hint: '1024x1536', exact_size_supported: false },
     max_calls: 1, retries: 0, output_count: 1, automatic_split: false, upscale: false };
   const evidence = Object.fromEntries(['inputs.json','product-understanding.json','style-analysis.json','six-image-blueprint.json','interaction.json'].map(f => [f, hash(fs.readFileSync(runFile(run, f)))]));
-  const plan = { skill: ID, version: '3.3.1', run_id: m.run_id, logical_panel_count: 6, approval_version: approval.version, approval_digest: approval.digest, jobs: [job], evidence };
+  const plan = { skill: ID, version: '3.6.0', run_id: m.run_id, logical_panel_count: 6, approval_version: approval.version, approval_digest: approval.digest, jobs: [job], evidence };
   for (const name of ['global-style-lock.json', 'reference-selection.json', 'composite-generation-prompt.md', 'composite-plan.json']) fs.rmSync(runFile(run, name), { force: true });
   write(runFile(run, 'global-style-lock.json'), lock);
   write(runFile(run, 'reference-selection.json'), selection);
@@ -449,7 +479,7 @@ export function createHandoff(run, capability) {
     return fs.realpathSync(file);
   });
   if (capability.max_reference_images != null) need(paths.length <= capability.max_reference_images, 'Observed host reference limit exceeded; replan before generation');
-  return { skill: ID, run_id: m.run_id, job_id: 'COMPOSITE-01', tool: capability.tool, capability,
+  return { skill: ID, run_id: m.run_id, job_id: 'COMPOSITE-01', canvas_ratio: '2:3', task_role: 'composite', tool: capability.tool, capability,
     tool_arguments: { prompt, referenced_image_paths: paths, transparent_background: false },
     plan_sha256: hash(fs.readFileSync(runFile(run, 'composite-plan.json'))), call_count: 1 };
 }
@@ -476,11 +506,24 @@ export function saveResult(run, imagePath, hostEvidence) {
   const directory = path.join(m.workspace, 'outputs', ID, m.run_id);
   fs.mkdirSync(directory, { recursive: true });
   const dest = path.join(directory, 'composite-preview.png');
-  imageIO({ action: 'save_png', source: imagePath, destination: dest });
+  const resultFile = runFile(run, 'generation-result.json');
+  if (fs.existsSync(resultFile)) {
+    const previous = read(resultFile);
+    need(previous.original_generated_sha256 === source.sha256 && previous.run_id === m.run_id, 'Different composite result already recorded');
+    need(imageIO({ action: 'inspect', files: [previous.image_path] })[0].sha256 === previous.sha256, 'Saved composite changed');
+    return previous;
+  }
+  if (!fs.existsSync(dest)) {
+    const pending = `${dest}.${source.sha256}.pending`;
+    if (!fs.existsSync(pending)) imageIO({ action: 'save_png', source: imagePath, destination: pending });
+    need(imageIO({ action: 'inspect', files: [pending] })[0].pixel_sha256 === source.pixel_sha256, 'Pending composite differs from tool result');
+    fs.renameSync(pending, dest);
+  }
   const info = imageIO({ action: 'inspect', files: [dest] })[0];
+  need(info.pixel_sha256 === source.pixel_sha256, 'Existing composite differs from the actual tool result; preserve both for recovery');
   const result = { skill: ID, run_id: m.run_id, job_id: 'COMPOSITE-01', provider: 'host-tool', tool: claim.tool, host: claim.capability?.host || 'codex', model: claim.capability?.selection?.model || null, host_evidence: hostEvidence,
     image_path: dest, ...info, original_generated_sha256: source.sha256, status: 'generated_awaiting_user_review', independent_images_exported: 0 };
-  write(runFile(run, 'generation-result.json'), result);
+  replaceJSON(resultFile, result);
   return result;
 }
 

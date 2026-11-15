@@ -8,10 +8,16 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const walk = dir => fs.readdirSync(dir, {withFileTypes:true}).filter(e => !['.runtime','__pycache__'].includes(e.name)).flatMap(e => e.isDirectory() ? walk(path.join(dir,e.name)) : [path.join(dir,e.name)]);
 const files = walk(root);
 const pkg = JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-assert.equal(pkg.name, 'ahui-main-image-design'); assert.equal(pkg.version,'3.3.1');
+assert.equal(pkg.name, 'ahui-main-image-design');
 assert.equal(pkg.repository,undefined); assert.equal(pkg.dependencies,undefined);
 assert.deepEqual(Object.keys(pkg.scripts).sort(),['test','verify']);
 const skill = fs.readFileSync(path.join(root,'SKILL.md'),'utf8');
+const declaredVersion = skill.match(/^  version:\s*["']?([^"'\s]+)["']?\s*$/m)?.[1];
+assert.equal(pkg.version, declaredVersion, 'Package and SKILL metadata versions must match');
+for (const manifestName of ['bundle-manifest.json', 'release-manifest.json']) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, manifestName), 'utf8'));
+  assert.equal(manifest.version, pkg.version, `${manifestName} version must match package.json`);
+}
 assert.match(skill,/^---\r?\nname: ahui-main-image-design\r?\n/);
 assert.match(fs.readFileSync(path.join(root,'agents/openai.yaml'),'utf8'),/display_name: "阿辉的主图设计"/);
 for (const file of files) {

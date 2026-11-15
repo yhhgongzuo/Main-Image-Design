@@ -53,13 +53,17 @@
 
 `max_reference_images` 仅在实际知道上限时填写；首次策划给后续小样预留一个位置。`max_concurrency` 使用当前工具允许的并发数；不确定或禁止并发时填 1，即使平台技术上可并发也不能覆盖宿主规则。
 
-claim / hd-batch / hd-claim / composite-revise 返回的 tool_arguments 是统一的内部任务数据，保持 prompt、referenced_image_paths、transparent_background。它不是其他平台可直接调用的参数。原生工具可按其 schema 直接使用；其他工具在领取后执行：
+V3.9把工具能力和任务几何分开。任务顶层task_role/composite、canvas_ratio/2:3用于合集与修改，task_role/hd、canvas_ratio/1:1用于高清。工具确有比例字段时可映射fields.ratio为其实际字段名；map-call采用任务比例，现有extra_arguments里的ratio/aspect_ratio/aspectRatio也随任务比例改变，不把2:3沿用到高清。显式尺寸采用真实支持的task_settings，例如composite:{size:"1024x1536"}、hd:{size:"1024x1024"}，且必须映射fields.size并有schema依据；数值仅示例，不保证某工具支持。全局所选size与任务比例冲突时会阻止映射，需要改为真实支持的分角色设置。不要在extra_arguments写死width/height或具体尺寸绕过阶段选择。原生工具无尺寸／比例参数时仅在提示词表达目标，不添加不存在字段。
+
+模块函数返回的tool_arguments是统一内部任务数据；V3.9 CLI返回完整任务文件的task_path，hd-batch返回逐项路径清单。按运行文档读全单项任务，保持prompt、referenced_image_paths、transparent_background；其他工具用map-call读取这个task_path，不传收据或整个批次：
 
 ```text
 node <skill>/scripts/map-call.mjs <已领取的单个任务JSON> <capability.json> [bindings.json]
 ```
 
 对批次逐个使用 jobs 中的原始任务；不要重新领取。输出 tool 和 arguments 交给宿主实际调用一次。映射脚本不会生图、联网或修改领取状态。
+
+V3.9的map-call CLI也返回task_path小收据；读取该文件或用read-task.mjs读取其中的tool与arguments，再交给实际工具一次。不要把映射收据当成arguments，不将六份映射结果拼在同一大返回中。模块mapToolCall仍直接返回完整对象，适合宿主文件API／队列内部使用。
 
 file_ids/urls 需要宿主先将该任务确需的文件上传到已选择服务，并将实际返回写为 bindings.json：每个绝对路径对应 `{ "value":"真实附件ID或URL", "sha256":"该文件实际SHA256", "upload_evidence":"真实上传结果引用" }`。不能复用别的产品、别的会话或风格图的附件 ID。映射前检查文件哈希；不要打印带签名 URL、凭证或 base64。
 

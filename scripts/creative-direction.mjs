@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 
 export const CREATIVE_CHECKS = ['angles', 'typography', 'composition', 'content', 'rhythm', 'style', 'scenes', 'benefit_expression', 'photography', 'scene_physics', 'reference_adaptation'];
 export const CREATIVE_FIELDS = ['angle', 'distance', 'focus', 'presentation', 'composition', 'typography', 'title_position', 'decoration', 'text_product_relation', 'visual_focus', 'rhythm', 'difference', 'lighting_materials', 'scene_physics', 'visual_hierarchy'];
+export const PANEL_EXECUTION_FIELDS = ['lighting_materials', 'scene_physics', 'presentation', 'composition'];
+export const productIdentityText = product => `${product.identity_summary}；完整产品身份约束：${JSON.stringify(product.identity_lock)}`;
 const digest = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const normalized = value => String(value || '').normalize('NFKC').toLowerCase().replace(/[\s，。；、,.!?！?]/g, '');
 
@@ -66,3 +68,6 @@ export function validateCreative(b, p, lock, need) {
 export function panelDirection(panel) {
   return [...new Set([panel.creative_direction, `${panel.angle}，${panel.distance}展示${panel.focus}`, panel.presentation, panel.composition, `${panel.typography}（${panel.title_position}，${panel.decoration}，${panel.text_product_relation}）`, panel.rhythm, `光线与材质：${panel.lighting_materials}`, `场景物理关系：${panel.scene_physics}`, `视觉主次：${panel.visual_hierarchy}`])].join('；');
 }
+
+// Shared execution standard for approved photographic designs.
+export const PHOTOGRAPHIC_STANDARD = "默认呈现经过适度修图的真实商业摄影，保留丰富电商排版。品牌色用于商品与信息设计，环境、皮肤及道具保留各自自然颜色，不给全景统一染色。按产品原图区分表面光泽、反射及符合拍摄距离的纹理尺度；不把塑料改成玻璃，不夸大绒毛、毛孔或微纹理，不凭空添加磨损。柔光仍保留曲面转折、接触阴影与材质差异，避免统一高光、蜡质表面、过度磨皮及全景散景。人物仅按已确认方案出现：先明确自然行为和视线，再保留适合景别的肤色变化、发丝层次及衣物受力；不强行添加毛孔、皱纹或污渍。真实空间内的商品、人物及环境遵循一致的光源、透视、遮挡和可信尺度，背景适度虚化但保留空间线索；若为独立放大的商品特写叠加场景，明确其为平面海报组合，避免伪装成同一空间中的巨物。已确认无人场景不得新增人物。用户明确选择插画、卡通或其他风格时按其要求，白底商品图遵守其专属角色。";
