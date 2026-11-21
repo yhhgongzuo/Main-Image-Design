@@ -1,30 +1,15 @@
-Produce ONE standalone high-definition square 1:1 Amazon US listing image for panel {{PANEL}}. Prefer native 2048x2048 if supported; otherwise use native approximately 1K square output. Do not artificially resample to pretend a higher resolution.
+Generate one standalone square 1:1 image for panel {{PANEL}} on {{PLATFORM}}, at the highest native square resolution supported by the image tool.
 
-Attachment 1 is the CURRENT DESIGN REFERENCE: the approved sample crop for initial production, or the latest successful image for a targeted edit. Preserve its scene, camera direction, framing, subject position and scale, composition, colors, typography style, text regions, hierarchy and whitespace, except for the current explicit user change below. Earlier successful adjustments remain part of this design. Do not introduce an unrequested visual style or reinterpret the layout.
-
-EDGE HANDLING: Inspect only the extreme edge of the design crop for a very narrow white or near-white strip, typically a few pixels, left by composite separators, cropping or resampling. Only when clearly a technical remnant rather than an intentional design feature, remove that remnant and naturally continue the adjacent background to the canvas edge. Preserve deliberate white borders, card outlines, whitespace, white product backgrounds and white objects near the edge. When uncertain, preserve the approved design. Do not zoom, stretch, crop products or text, remove legitimate design content, or add a new border to hide the strip. The strip's width is relative to the input crop; do not apply a fixed pixel trim.
-
-{{APPROVED_CHANGE}}
-
-Other attachments are ORIGINAL PRODUCT evidence. Use them to correct product geometry, proportions, components, material appearance, colors and real markings; do not copy their background or replace the approved camera direction. Do not copy malformed geometry or garbled text from the crop. Never invent unseen structures, accessories or features.
-Product: {{PRODUCT}}
-Identity constraints: {{IDENTITY}}
-Reference roles:
+Attachment 1 is the approved design basis. Preserve its framing, composition, person and pose, camera, relative size, placement, occlusion, lighting, background, whitespace and typography. This panel: {{LAYOUT}}
+Visible product geometry: {{GEOMETRY}}
+Product identity: {{IDENTITY}}
 {{REFERENCES}}
-Evidence boundaries: {{LIMITS}}
-
-Improve clarity, clean edges and text readability. Correct local deformation and obvious hand anatomy, contact, occlusion, support and scale errors while preserving the approved arrangement. Keep surfaces natural, backgrounds clean and existing whitespace intact. Do not add decorations, props, particles, new textures, effects, claims, badges or watermarks. Avoid oversharpening, halos, exaggerated contrast, excessive microtexture or a cluttered background. Preserve existing soft focus where intentional.
-
-APPROVED PANEL PHOTOGRAPHY (guidance only, never visible copy):
-{{PHOTOGRAPHY}}
-Approved physical relationships: {{SCENE_PHYSICS}}
-Approved presentation: {{PRESENTATION}}
-Approved composition: {{COMPOSITION}}
-Keep the approved scene contents and layout, but correct waxy skin, homogenized highlights, unnaturally smooth materials and incoherent light within that arrangement. Original product evidence governs material appearance; do not copy rendering defects from the crop. Preserve natural material colors instead of tinting every surface to the brand palette. Soft light must retain form, contact shadows and distinct material responses. Use texture appropriate to subject and viewing distance; do not invent wear or amplify pores or flock fibers. Where approved people are present, keep natural behavior, skin tonal variation, hair and fabric detail appropriate to framing. Never add people to an approved person-free scene. Distinguish a physically shared scene from an approved graphic overlay of an enlarged product close-up; do not imply a giant real object. An explicitly approved non-photographic style remains that style.
-
-EXACT APPROVED VISIBLE COPY (language: {{LANGUAGE}}):
-{{COPY}}
-Render every supplied character, number, unit, table row and footnote verbatim. Do not rewrite, translate, omit, add or guess text from blurry pixels. Use the specified language's reading direction and natural line breaks. Preserve the approved text placement and hierarchy; make only minimal local adjustments needed for accurate readable lettering. Empty marketing copy means no marketing copy. Faithful physical product marks are governed by the original product evidence.
-
+Use any additional product photos only for identity and existing visible details at the approved angle. Preserve the existing design and avoid importing their background, pose or styling.
 {{MAIN}}
+
+Exact visible marketing copy (language: {{LANGUAGE}}):
+{{COPY}}
+Keep every supplied character, number, unit and label in its existing hierarchy. Physical product markings follow the visible product evidence.
+
 {{USER_CHANGE}}
+Return one complete image in the same framing and orientation.

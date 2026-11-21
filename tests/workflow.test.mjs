@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { previewCopyChange } from '../scripts/copy-language.mjs';
 import { setStyleReferences, setCopyLanguage, presentDesign, approveDesign, inspectInputs, validateProduct, styleLock, validateStyle, compilePlan, createHandoff, claimGeneration, executeOnce, saveResult, saveNativeResponse, selectReferences, read, imageIO, STYLE_FIELDS, prepareProductReferences } from '../scripts/workflow.mjs';
@@ -981,4 +982,69 @@ test('V3.9: one confirmed six-panel translation survives its own dispatch progre
     assert.equal(claim.copy_batch_digest,shown.digest);assert.equal(claim.locale,'zh-CN');savePanel(f,index,claim.attempt);
   }
   assert.throws(()=>claimHD(f.run,2,cap,request),/already submitted/);
+});
+
+test('V3.11: independent HD workers, interrupted handoff, reversed completion and all-panel delivery', async () => {
+  const f = sample(), crops = hdStart(f);
+  const cmd = async (...args) => JSON.parse((await promisify(execFile)(process.execPath,
+    [path.join(root, 'scripts/cli.mjs'), args[0], '--run', f.run, ...args.slice(1)], {encoding:'utf8'})).stdout);
+  const panel = i => ['--index', String(i), '--attempt', '1'];
+  const plans = crops.panels.map(({index, sha256}) => ({index, basis_sha256:sha256,
+    layout:'Synthetic square', geometry:'Colored flat square', source_ids:['P1'],
+    mode:index===1 ? 'white_source' : [2,3,4].includes(index) ? 'region' : 'scale',
+    box:[0.1,0.1,0.9,0.9], change:'Clean the center',
+    polygons:[[[0.2,0.2],[0.8,0.2],[0.8,0.8]]] }));
+  const planFile = path.join(f.run, 'plans.json'), capFile = path.join(f.run, 'cap.json');
+  json(planFile, plans); json(capFile, {...cap, max_concurrency:2});
+  await cmd('hd-batch','--capability',capFile,'--plan',planFile,'--dispatch','windows');
+  const missing = path.join(f.run,'hd-2-1-claim.json');
+  const original = fs.readFileSync(missing); fs.unlinkSync(missing);
+  const initial = await cmd('hd-window-status');
+  assert.deepEqual(fs.readFileSync(missing),original);
+  assert.equal(initial.window_slots,2);
+  assert.deepEqual(initial.panels.map(p=>p.state), ['local','ready','ready','ready','local','local']);
+  await assert.rejects(cmd('hd-window-reserve',...panel(1)));
+  for (const i of [2,3]) {
+    const res = await cmd('hd-window-reserve',...panel(i));
+    assert.ok(res.prompt.includes(initial.panels[i-1].task_path));
+    await cmd('hd-window-bind',...panel(i),'--host','mock','--thread','mock-'+i);
+  }
+  await assert.rejects(cmd('hd-window-reserve',...panel(4)));
+  const started = await Promise.allSettled([2,2,3].map(i=>cmd('hd-worker-start',...panel(i))));
+  assert.equal(started.filter(r=>r.status==='fulfilled').length,2);
+  const save = i => cmd('hd-save',...panel(i),'--image',path.join(temp,`hd${i===3?512:1024}.png`),'--host-evidence','MOCK-output-'+i);
+  async function review(i, verdict='match') {
+    const r = hdJson(f,`hd-${i}-1-result.json`), j = hdJson(f,`hd-${i}-1-claim.json`);
+    const dest = path.join(f.run,`test-review-${i}.json`);
+    json(dest,{verdict, layout:'Mock layout', product:'Mock square', copy:'Mock text',sha256:r.sha256,basis_sha256:j.basis_sha256});
+    await cmd('hd-review',...panel(i),'--review',dest);
+  }
+  await save(3);
+  const middle = await cmd('hd-window-status');
+  assert.equal(middle.panels[1].state,'running');
+  assert.equal(middle.panels[2].state,'needs_review');
+  assert.equal(middle.window_slots,1);
+  assert.equal(middle.panels[1].thread.threadId,'mock-2');
+  await cmd('hd-window-reserve',...panel(4));
+  await assert.rejects(cmd('hd-finish'));
+  await review(3);
+  const early = await cmd('hd-finish','--only','3');
+  assert.deepEqual(early.panels.map(p=>p.index),[3]);
+  const repeated = await save(3);
+  assert.equal(repeated.sha256,early.panels[0].result.sha256);
+  await cmd('hd-worker-start',...panel(4));
+  const failureFile = path.join(f.run,'mock-wait.json');
+  json(failureFile,{definitive:false,reason:'Mock timeout',host_evidence:'Mock submitted call'});
+  await cmd('hd-fail',...panel(4),'--failure',failureFile);
+  assert.equal((await cmd('hd-window-status')).panels[3].state,'unknown');
+  await assert.rejects(cmd('hd-window-reserve',...panel(4)));
+  await Promise.all([save(2),save(4),...[1,5,6].map(i=>cmd('hd-render',...panel(i)))]);
+  await Promise.all([1,2,4,5,6].map(i=>review(i,i===4?'mismatch':'match')));
+  await assert.rejects(cmd('hd-finish'));
+  assert.deepEqual(fs.readdirSync(early.output_dir),['03.png']);
+  // Simulate a corrected review decision, without issuing another generation call.
+  await review(4);
+  const done = await cmd('hd-finish');
+  assert.equal(done.status,'complete');
+  assert.deepEqual(done.panels.map(p=>path.basename(p.image_path)),['01.png','02.png','03.png','04.png','05.png','06.png']);
 });

@@ -107,7 +107,7 @@
 
 **我的产品不是亚马逊的，能用吗？**
 
-能用。V3.9.2 版本已原生适配国内电商平台，自动生成中文排版、写实场景的主图；其他海外平台也可以支持，需要改语言/平台直接说明即可。它不会去搜竞品，也不会硬套爆款模板，卖点都来自你给的产品资料。
+能用。V3.17.0 版本已原生适配国内电商平台，自动生成中文排版、写实场景的主图；其他海外平台也可以支持，需要改语言/平台直接说明即可。它不会去搜竞品，也不会硬套爆款模板，卖点都来自你给的产品资料。**已有小样、成品或独立图片要改字、改价、修产品变形时，内置局部编辑会自动裁切局部生成、按位柔边贴回原图，不用整张重做。**
 
 **一套图大概花多少额度？**
 
@@ -126,7 +126,7 @@
 ├── AGENTS.md                   # 给宿主 Agent 的执行约定
 ├── agents/
 │   └── openai.yaml             # 平台侧显示名、简介、默认提示词
-├── references/                 # 产品理解、风格、六图选题、高清制作、平台适配
+├── references/                 # 产品理解、风格、六图选题、高清制作、平台适配、局部修复
 │   ├── intake-and-style.md
 │   ├── product-understanding.md
 │   ├── style-reference-analysis.md
@@ -135,15 +135,18 @@
 │   ├── commercial-art-direction.md
 │   ├── domestic-design.md      # 国内电商分支设计规范
 │   ├── composite-revisions.md
+│   ├── product-repair.md       # 内置局部编辑：裁切、局部生成、柔边贴回
+│   ├── product-repair-prompt.md# 局部修复生图提示词
 │   ├── hd-production.md
 │   ├── hd-prompt.txt
 │   ├── hd-prompt-domestic.txt  # 国内版高清生图提示词
+│   ├── hd-windows.md           # Windows 本地高清工作流说明
 │   ├── runtime.md
 │   ├── host-compatibility.md
 │   ├── local-adaptation.md
 │   └── source-audit.md
-├── scripts/                    # 工作流、提示词编译、并发高清、安装与校验脚本
-├── tests/                      # 流程与平台兼容性自动化测试
+├── scripts/                    # 工作流、提示词编译、并发高清、局部编辑、侧边栏清理、安装与校验脚本
+├── tests/                      # 流程、平台兼容性与侧边栏清理自动化测试
 ├── package.json
 ├── bundle-manifest.json        # 发布清单与完整性校验
 ├── release-manifest.json

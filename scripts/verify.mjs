@@ -23,7 +23,9 @@ assert.match(fs.readFileSync(path.join(root,'agents/openai.yaml'),'utf8'),/displ
 for (const file of files) {
   if (file.endsWith('.md')) {
     const content = fs.readFileSync(file,'utf8');
-    for (const [, target] of content.matchAll(/\]\(([^)]+)\)/g)) if (!/^https?:/.test(target)) assert.ok(fs.existsSync(path.resolve(path.dirname(file),target)),`Missing link ${target}`);
+    // Literal Markdown examples in code blocks and inline code are not file links.
+    const prose = content.replace(/^```[^\n]*\n[\s\S]*?^```[^\n]*$/gm, '').replace(/`[^`\n]+`/g, '');
+    for (const [, target] of prose.matchAll(/\]\(([^)]+)\)/g)) if (!/^https?:/.test(target)) assert.ok(fs.existsSync(path.resolve(path.dirname(file),target)),`Missing link ${target}`);
   }
   if (file.endsWith('.mjs')) {
     const syntax = spawnSync(process.execPath,['--check',file],{encoding:'utf8',timeout:15000});

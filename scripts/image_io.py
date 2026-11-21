@@ -6,7 +6,7 @@ import sys
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from PIL import Image, ImageOps
+from PIL import Image, ImageDraw, ImageOps
 
 
 def inspect(file):
@@ -28,6 +28,41 @@ def main(request):
         return {"text": "\n".join("".join(p.itertext()) for p in doc.findall(".//w:p", ns))}
     if request["action"] == "inspect":
         return [inspect(file) for file in request["files"]]
+    if request["action"] == "hd_render":
+        mode = request["mode"]
+        with Image.open(request["basis"]) as original:
+            base = ImageOps.exif_transpose(original).convert("RGBA")
+        if base.width != base.height:
+            raise ValueError("HD composition requires a square design basis")
+        side = max(base.width, 2048)
+        if mode == "region":
+            with Image.open(request["candidate"]) as image:
+                candidate = ImageOps.exif_transpose(image).convert("RGBA")
+            if candidate.width != candidate.height:
+                raise ValueError("Cannot register a non-square edit to a square crop")
+            side = max(side, candidate.width)
+            if candidate.width != side:
+                candidate = candidate.resize((side, side), Image.Resampling.LANCZOS)
+            mask = Image.new("L", (side, side), 0)
+            draw = ImageDraw.Draw(mask)
+            for vertices in request["polygons"]:
+                draw.polygon([(round(x*(side-1)), round(y*(side-1))) for x,y in vertices], fill=255)
+            result = Image.composite(candidate, base.resize((side,side), Image.Resampling.LANCZOS), mask)
+        elif mode == "white_source":
+            with Image.open(request["original"]) as image:
+                product = ImageOps.exif_transpose(image).convert("RGBA")
+            left,top,right,bottom = [round(v*side) for v in request["box"]]
+            ratio = min((right-left)/product.width, (bottom-top)/product.height)
+            product = product.resize((max(1,round(product.width*ratio)), max(1,round(product.height*ratio))), Image.Resampling.LANCZOS)
+            result = Image.new("RGBA", (side,side), "white")
+            result.alpha_composite(product, ((left+right-product.width)//2, (top+bottom-product.height)//2))
+        elif mode == "scale":
+            result = base.resize((side,side), Image.Resampling.LANCZOS)
+        else:
+            raise ValueError("Unknown HD render mode")
+        with Path(request["destination"]).open("xb") as output:
+            result.save(output, format="PNG")
+        return inspect(request["destination"])
     if request["action"] == "split":
         with Image.open(request["source"]) as image:
             image.load()

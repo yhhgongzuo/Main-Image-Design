@@ -7,22 +7,30 @@ import { setStyleReferences, setCopyLanguage, previewStyleChoices, confirmStyleC
 import { claimCompositeRevision, saveCompositeRevision, failCompositeRevision, selectComposite } from './composite-revisions.mjs';
 
 import { CREATIVE_FIELDS, CREATIVE_CHECKS } from './creative-direction.mjs';
-import { previewHD, approveHD, splitHD, claimHD, saveHD, saveHDResponse, failHD, finishHD, claimHDBatch } from './hd-workflow.mjs';
+import { previewHD, approveHD, splitHD, claimHD, saveHD, saveHDResponse, failHD, finishHD, claimHDBatch, nextSequentialHD, renderLocalHD, reviewHD } from './hd-workflow.mjs';
 
 import { isDomestic, VISUAL_SYSTEM_FIELDS } from './market-profile.mjs';
 import { commandReceipt } from './result-output.mjs';
+import { patchPlan, patchContext, startPatch, savePatch, assemblePatches } from './local-edit.mjs';
+import { userMessage } from './interaction.mjs';
+import { validateCapability } from './host-adapter.mjs';
+import { windowStatus, reserveWindow, bindWindow, startWindow } from './hd-windows.mjs';
 
 const [command, ...argv] = process.argv.slice(2);
+const patchKeys = ['run','revision','index','attempt'];
 const allowed = {
+  'patch-new':['run','request','capability'], 'patch-start':[...patchKeys,'region'],
+  'patch-save':[...patchKeys,'region','image','response','host-evidence'], 'patch-compose':patchKeys, 'patch-finish':patchKeys,
   'set-style-references': ['run','request'], 'set-language': ['run','request'], 'copy-preview': ['run','request'],
   init: ['input','workspace'], outline: ['run'], 'style-preview': ['run'], 'style-confirm': ['run','response'], style: ['run'], prepare: ['run'],
   audit: ['run'], ready: ['run','limits'], preview: ['run','limits'], approve: ['run','response'], compile: ['run','limits'], handoff: ['run','capability'], claim: ['run','capability'],
   save: ['run','image','response','host-evidence'], fail: ['run','reason'],
-  'hd-preview': ['run'], 'hd-approve': ['run','response'], 'hd-split': ['run'],
+  'hd-preview': ['run'], 'hd-approve': ['run','response'], 'hd-split': ['run'], 'hd-sequential-next': ['run'],
   'composite-revise': ['run','request','capability'], 'composite-save': ['run','revision','image','response','host-evidence'], 'composite-fail': ['run','revision','failure'],
   'composite-select': ['run','request'],
-  'hd-batch': ['run','capability'], 'hd-claim': ['run','index','capability','request'], 'hd-save': ['run','index','attempt','image','response','host-evidence'],
-  'hd-fail': ['run','index','attempt','failure'], 'hd-finish': ['run'],
+  'hd-batch': ['run','capability','plan','dispatch'], 'hd-render': ['run','index','attempt'], 'hd-review': ['run','index','attempt','review'], 'hd-claim': ['run','index','capability','request'], 'hd-save': ['run','index','attempt','image','response','host-evidence'],
+  'hd-window-status': ['run'], 'hd-window-reserve': ['run','index','attempt'], 'hd-worker-start': ['run','index','attempt'],
+  'hd-window-bind': ['run','index','attempt','host','thread','origin'], 'hd-fail': ['run','index','attempt','failure'], 'hd-finish': ['run','only'],
 };
 try {
   need(allowed[command], 'Usage: node scripts/cli.mjs init|outline|style-preview|style-confirm|style|prepare|audit|ready|preview|approve|compile|handoff|claim|save|fail|hd-preview|hd-batch|hd-save|hd-finish|composite-revise --input FILE / --run DIR (see references/runtime.md)');
@@ -36,14 +44,58 @@ try {
   const file = name => path.join(args.run, name);
   let result;
   switch (command) {
+    case 'patch-new': {
+      const request = read(args.request), capability = validateCapability(read(args.capability));
+      need(userMessage(request.user_request) && path.isAbsolute(request.base) && path.isAbsolute(request.output_dir), 'Supply the real user request, original base and output folder.');
+      const refs = request.references || {};
+      need(Object.values(refs).every(p => typeof p === 'string' && path.isAbsolute(p) && fs.existsSync(p)), 'Supply existing absolute product reference paths.');
+      fs.mkdirSync(args.run,{recursive:true});
+      need(!fs.existsSync(file('standalone-claim.json')) && !fs.existsSync(file('inputs.json')), 'Use a new standalone edit directory, or resume the existing claim.');
+      const local_edit = patchPlan(args.run, {base:request.base, regions:request.regions, capability, standaloneRefs:refs, request:request.user_request});
+      const claim = {local_edit, output_dir:request.output_dir, user_request:request.user_request, capability, tool:capability.tool};
+      fs.writeFileSync(file('standalone-claim.json'),JSON.stringify(claim,null,2),{flag:'wx'});
+      result = {status:'awaiting_region_edits',regions:local_edit.tasks.length}; break;
+    }
+    case 'patch-start': result = startPatch(patchContext(args.run,args),Number(args.region)); break;
+    case 'patch-save': result = savePatch(patchContext(args.run,args),Number(args.region),args); break;
+    case 'patch-compose':
+      result = {status:'composed',image_path:assemblePatches(patchContext(args.run,args))}; break;
+    case 'patch-finish': {
+      const claim = patchContext(args.run,args);
+      const image = assemblePatches(claim);
+      const evidence = 'Composed local tool returns from ' + claim.local_edit.folder;
+      if (args.revision) result = saveCompositeRevision(args.run, Number(args.revision), image, evidence);
+      else if (args.index) result = saveHD(args.run,Number(args.index),Number(args.attempt),image,evidence);
+      else {
+        fs.mkdirSync(claim.output_dir,{recursive:true});
+        const dest = path.join(claim.output_dir, path.parse(claim.local_edit.base).name + '-' + path.basename(claim.local_edit.folder) + '.png');
+        if (!fs.existsSync(dest)) fs.copyFileSync(image,dest,fs.constants.COPYFILE_EXCL);
+        need(fs.readFileSync(dest).equals(fs.readFileSync(image)), 'Conflicting standalone output.');
+        result = {status:'saved',image_path:dest};
+      }
+      break;
+    }
     case 'set-style-references': result = setStyleReferences(args.run, read(args.request)); break;
     case 'set-language': result = setCopyLanguage(args.run, read(args.request)); break;
     case 'copy-preview': result = previewCopyChange(args.run, read(args.request)); break;
     case 'hd-preview': result = previewHD(args.run); break;
     case 'hd-approve': result = approveHD(args.run, read(args.response)); break;
     case 'hd-split': result = splitHD(args.run); break;
-    case 'hd-batch': result = claimHDBatch(args.run, read(args.capability)); break;
-    case 'hd-claim': result = claimHD(args.run, Number(args.index), read(args.capability), args.request ? read(args.request) : null); break;
+    case 'hd-sequential-next': result = nextSequentialHD(args.run); break;
+    case 'hd-batch': {
+      const capability = read(args.capability);
+      result = claimHDBatch(args.run, capability, args.plan ? read(args.plan) : null, args.dispatch);
+      break;
+    }
+    case 'hd-window-status': result = windowStatus(args.run); break;
+    case 'hd-window-reserve': result = reserveWindow(args.run, Number(args.index), Number(args.attempt)); break;
+    case 'hd-window-bind': result = bindWindow(args.run, Number(args.index), Number(args.attempt), args.host, args.thread, args.origin); break;
+    case 'hd-worker-start': result = startWindow(args.run, Number(args.index), Number(args.attempt)); break;
+    case 'hd-render': result = renderLocalHD(args.run, Number(args.index), Number(args.attempt)); break;
+    case 'hd-review': result = reviewHD(args.run, Number(args.index), Number(args.attempt), read(args.review)); break;
+    case 'hd-claim':
+      need(args.request, 'Use hd-batch for initial HD or provide a targeted user request');
+      result = claimHD(args.run, Number(args.index), read(args.capability), read(args.request)); break;
     case 'composite-revise': result = claimCompositeRevision(args.run, read(args.request), read(args.capability)); break;
     case 'composite-select': result = selectComposite(args.run, read(args.request)); break;
     case 'composite-save': {
@@ -66,7 +118,7 @@ try {
       need(Boolean(args.image) !== Boolean(args.response), 'Specify exactly one of --image or --response');
       result = args.response ? saveHDResponse(args.run, Number(args.index), Number(args.attempt), read(args.response), args['host-evidence']) : saveHD(args.run, Number(args.index), Number(args.attempt), args.image, args['host-evidence']); break;
     case 'hd-fail': result = failHD(args.run, Number(args.index), Number(args.attempt), read(args.failure)); break;
-    case 'hd-finish': result = finishHD(args.run); break;
+    case 'hd-finish': result = finishHD(args.run, args.only); break;
     case 'init': result = inspectInputs(read(args.input), args.workspace || process.cwd()); break;
     case 'outline': {
       const m = read(file('inputs.json'));

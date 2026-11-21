@@ -10,7 +10,7 @@ const hash = value => createHash('sha256').update(JSON.stringify(value)).digest(
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
 const exists = (run, name) => fs.existsSync(path.join(run, name));
 const latestHD = (run, index) => Math.max(0, ...fs.readdirSync(run).filter(name => new RegExp(`^hd-${index}-\\d+-claim\\.json$`).test(name)).map(name => Number(name.split('-')[2])));
-const hdFingerprint = (run, index, attempt) => Object.fromEntries(['claim', 'result', 'failure'].map(suffix => {
+const hdFingerprint = (run, index, attempt) => Object.fromEntries(['claim', 'result', 'failure', ...(exists(run, `hd-${index}-${attempt}-review.json`) ? ['review'] : [])].map(suffix => {
   const name = `hd-${index}-${attempt}-${suffix}.json`;
   return [suffix, exists(run, name) ? hash(read(path.join(run, name))) : null];
 }));
@@ -18,7 +18,7 @@ const hdFingerprint = (run, index, attempt) => Object.fromEntries(['claim', 'res
 function sourceSnapshot(run, batch) {
   const names = fs.readdirSync(run).filter(name =>
     ['inputs.json', 'product-understanding.json', 'style-analysis.json', 'six-image-blueprint.json', 'generation-result.json', 'composite-selection.json', 'hd-approval.json', 'hd-crops.json'].includes(name) ||
-    /^composite-\d+-(claim|result|failure)\.json$/.test(name) || (!batch && /^hd-\d+-\d+-(claim|result|failure)\.json$/.test(name))).sort();
+    /^composite-\d+-(claim|result|failure)\.json$/.test(name) || (!batch && /^hd-\d+-\d+-(claim|result|failure|review)\.json$/.test(name))).sort();
   return names.map(name => [name, read(path.join(run, name))]);
 }
 

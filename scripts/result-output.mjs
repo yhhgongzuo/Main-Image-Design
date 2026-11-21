@@ -15,7 +15,7 @@ export function commandReceipt(command, result, run) {
   fs.writeFileSync(resultPath, data, { flag: 'wx' });
   const receipt = { command, status: result.status || 'recorded', result_path: resultPath,
     result_bytes: Buffer.byteLength(data), result_sha256: createHash('sha256').update(data).digest('hex') };
-  for (const key of ['run_dir', 'id', 'version', 'digest', 'revision', 'index', 'attempt', 'max_concurrency']) if (result[key] != null) receipt[key] = result[key];
+  for (const key of ['run_dir', 'id', 'version', 'digest', 'revision', 'index', 'attempt', 'dispatch', 'max_concurrency']) if (result[key] != null) receipt[key] = result[key];
   if (typeof result.preview === 'string') {
     const previewPath = resultPath.replace(/\.json$/, '.md');
     fs.writeFileSync(previewPath, result.preview, { flag: 'wx' });
@@ -23,6 +23,7 @@ export function commandReceipt(command, result, run) {
     receipt.preview_characters = result.preview.length;
   }
   if (result.tool_arguments || result.arguments) receipt.task_path = resultPath;
+  if (result.local_edit) receipt.regions = result.local_edit.tasks.length;
   if (result.jobs) receipt.jobs = result.jobs.map(job => ({ index: job.index, attempt: job.attempt, job_id: job.id,
     task_path: job.index ? path.join(directory, `hd-${job.index}-${job.attempt}-claim.json`) : undefined,
     prompt_path: job.prompt_path ? path.join(directory, job.prompt_path) : undefined }));

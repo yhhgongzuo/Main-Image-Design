@@ -1,31 +1,15 @@
-Produce ONE standalone square 1:1 {{PLATFORM}} image for panel {{PANEL}}. Prefer native 2048x2048 when supported, otherwise native approximately 1K; do not resample.
+Generate one standalone square 1:1 image for panel {{PANEL}} on {{PLATFORM}}, at the highest native square resolution supported by the image tool.
 
-APPROVED REFERENCE STYLE:
-{{VISUAL_SYSTEM}}
-
-Attachment 1 is the CURRENT DESIGN REFERENCE: the approved sample crop for initial production, or the latest successful image for a targeted edit. Preserve its scene, camera, product placement, composition, background shapes and layers, decorative density, lighting treatment, information groups and typography hierarchy, except for the current explicit user change below. Keep earlier successful adjustments. Reconstruct fine background lines, textures and reflective forms where present; do not simplify these into a plain gradient or add motifs absent from the current design. White product panels remain white and undecorated.
-{{APPROVED_CHANGE}}
-The latest approved crop and its approved adjustments govern resolved design details; do not revert them to an earlier style description. Apply the set style only within this panel's role and approved scene.
-
-EDGE HANDLING: Inspect only the extreme edge of the design crop for a very narrow white or near-white strip, typically a few pixels, left by composite separators, cropping or resampling. Only when clearly a technical remnant rather than an intentional design feature, remove that remnant and naturally continue the adjacent background to the canvas edge. Preserve deliberate white borders, card outlines, whitespace, white product backgrounds and white objects near the edge. When uncertain, preserve the approved design. Do not zoom, stretch, crop products or text, remove legitimate design content, or add a new border to hide the strip. The strip's width is relative to the input crop; do not apply a fixed pixel trim.
-
-Other attachments are ORIGINAL PRODUCT evidence, governing geometry, proportions, components, colors, material appearance and physical markings. Their backgrounds are not the design reference.
-Product: {{PRODUCT}}
-Identity: {{IDENTITY}}
-Reference roles:
+Attachment 1 is the approved design basis. Preserve its framing, composition, person and pose, camera, relative size, placement, occlusion, lighting, background, whitespace and typography. This panel: {{LAYOUT}}
+Visible product geometry: {{GEOMETRY}}
+Product identity: {{IDENTITY}}
 {{REFERENCES}}
-Evidence limits: {{LIMITS}}
-
-APPROVED PANEL DIRECTION (never visible copy):
-Presentation: {{PRESENTATION}}
-Composition: {{COMPOSITION}}
-Materials and light: {{PHOTOGRAPHY}}
-Physical relationships: {{SCENE_PHYSICS}}
-Preserve distinct material responses, coherent light, contact, shadows and perspective. Correct deformation, hand anatomy and local rendering defects within the approved arrangement. Where people are approved, retain natural skin, hair and fabric detail appropriate to framing; do not add people to a person-free image. Respect deliberate photographic, graphic or non-photographic treatments. Distinguish a shared physical scene from an enlarged product overlay; avoid waxy surfaces and invented microtexture.
-
-EXACT VISIBLE COPY ({{LANGUAGE}}):
-{{COPY}}
-Render every supplied title, supporting line, small label, number, unit, table row and footnote verbatim. Preserve hierarchy and grouping with minimal local typography adjustments. Do not rewrite, translate, add, drop or infer words from blurry pixels. Empty marketing copy means none; product markings follow original evidence.
-
+Use any additional product photos only for identity and existing visible details at the approved angle. Preserve the existing design and avoid importing their background, pose or styling.
 {{MAIN}}
+
+Exact visible marketing copy (language: {{LANGUAGE}}):
+{{COPY}}
+Keep every supplied character, number, unit and label in its existing hierarchy. Physical product markings follow the visible product evidence.
+
 {{USER_CHANGE}}
+Return one complete image in the same framing and orientation.

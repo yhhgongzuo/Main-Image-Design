@@ -14,6 +14,8 @@ V3.9 CLI的init/style/preview/ready/compile/handoff/claim/hd-batch/hd-claim/comp
 
 `<skill>`是当前SKILL.md目录，`<workspace>`是当前任务工作区，所有路径落实为本地绝对路径。不要硬编码旧开发路径。执行 `node "<skill>/scripts/install.mjs" --check` 检查 Node 20+、Python 3.9+ 与 Pillow；解释器自动识别 python3/python/py -3，优先技能独立环境，强制 UTF-8。仅支持本版新run；旧版任务重新登记和确认，保留旧记录。
 
+对已有图的编辑由主请求收据给出区域数及版本。每个区域从 patch-start 领取独立 task_path，patch-save 原样记录局部回件，patch-compose 合成到工作目录，patch-finish 发布完整合成图。局部文件与回件不在聊天渲染，下面首次小样的 generatedImage 示例不用于局部修复。详见[内置局部编辑](product-repair.md)。旧版已领取任务继续按原有收据恢复。
+
 ## 登记
 
 将真实附件落到文件，不能凭文件名判断产品/风格角色，不可用最近N张图绕过路径或角色隔离。

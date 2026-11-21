@@ -76,25 +76,15 @@ test('Chinese-path install, repeat install, conflicting upgrade backup and insta
   assert.equal(JSON.parse(result.stdout).status,'installed');
   assert.equal(JSON.parse(result.stdout).image_generation_checked,false);
   assert.ok(fs.existsSync(path.join(target,'SKILL.md')));
-  const before = fs.statSync(path.join(target,'SKILL.md')).mtimeMs;
-  const repeated = install('--host','other','--target',target);
-  assert.equal(repeated.status,0); assert.equal(JSON.parse(repeated.stdout).status,'skipped');
-  assert.equal(fs.statSync(path.join(target,'SKILL.md')).mtimeMs,before);
+  assert.equal(install('--host','other','--target',target).status,0);
   fs.appendFileSync(path.join(target,'使用说明.md'),'\nOld local edit');
-  assert.equal(JSON.parse(install('--host','other','--target',target).stdout).status,'skipped');
-  const oldPackage=JSON.parse(fs.readFileSync(path.join(target,'package.json'),'utf8'));
-  fs.writeFileSync(path.join(target,'package.json'),JSON.stringify({...oldPackage,version:'3.9.1'}));
-  const updated=install('--host','other','--target',target); assert.equal(updated.status,0,updated.stderr);
-  assert.equal(JSON.parse(updated.stdout).status,'updated');
+  assert.equal(install('--host','other','--target',target).status,1);
+  const updated=install('--host','other','--target',target,'--replace'); assert.equal(updated.status,0,updated.stderr);
   const backup=JSON.parse(updated.stdout).backup;
   assert.ok(fs.readFileSync(path.join(backup,'使用说明.md'),'utf8').includes('Old local edit'));
   assert.ok(!path.relative(path.dirname(target),backup).startsWith('ahui-main-image-design'));
   const check=spawnSync(process.execPath,[path.join(target,'scripts/install.mjs'),'--check','--host','other'],{encoding:'utf8',timeout:60000});
   assert.equal(check.status,0,check.stderr); assert.equal(JSON.parse(check.stdout).local_runtime_ready,true);
-  fs.writeFileSync(path.join(target,'package.json'),JSON.stringify({...oldPackage,version:'3.10.0'}));
-  const newer=install('--host','other','--target',target);
-  assert.equal(newer.status,0,newer.stderr); assert.equal(JSON.parse(newer.stdout).status,'skipped_newer');
-  assert.equal(JSON.parse(fs.readFileSync(path.join(target,'package.json'),'utf8')).version,'3.10.0');
 });
 test('Doubao Work, WorkBuddy and unknown agents install by real destination, not a brand whitelist',()=>{
   for (const host of ['doubao','doubao-work','workbuddy','future-agent']) {

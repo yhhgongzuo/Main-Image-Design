@@ -25,9 +25,9 @@ export function validateCapability(cap) {
       need(text(cap.selection[k]) && cap.fields[k] && text(cap.selection.evidence), 'Selected settings need supported fields and evidence');
     }
     if (cap.task_settings != null) {
-      need(typeof cap.task_settings === 'object' && !Array.isArray(cap.task_settings), 'task_settings must describe composite and/or hd settings');
+      need(typeof cap.task_settings === 'object' && !Array.isArray(cap.task_settings), 'task_settings must describe composite, hd or patch settings');
       for (const [role, settings] of Object.entries(cap.task_settings)) {
-        need(['composite', 'hd'].includes(role) && settings && typeof settings === 'object', 'Unknown task settings role');
+        need(['composite', 'hd', 'patch'].includes(role) && settings && typeof settings === 'object', 'Unknown task settings role');
         for (const [key, value] of Object.entries(settings)) need(['size', 'ratio'].includes(key) && text(value) && cap.fields[key] && text(cap.selection?.evidence || cap.schema_evidence), 'Task geometry needs actual supported fields and evidence');
       }
     }
@@ -42,6 +42,7 @@ export function validateCapability(cap) {
 }
 
 export function mapToolCall(job, capability, bindings = {}) {
+  if (['scale','white_source'].includes(job.hd_plan?.mode)) throw new Error('Local HD job: run hd-render');
   const cap = validateCapability(capability), args = job.tool_arguments;
   need(args && text(args.prompt) && Array.isArray(args.referenced_image_paths) && args.referenced_image_paths.length, 'Expected claimed generation job');
   if (cap.max_reference_images != null) need(args.referenced_image_paths.length <= cap.max_reference_images, 'Reference image limit exceeded');
@@ -58,7 +59,7 @@ export function mapToolCall(job, capability, bindings = {}) {
   const output = { ...(cap.extra_arguments || {}), [cap.fields.prompt]: args.prompt, [cap.fields.images]: images };
   if (cap.fields.transparent_background) output[cap.fields.transparent_background] = false;
   const role = job.task_role || (job.canvas_ratio === '1:1' ? 'hd' : 'composite');
-  const settings = { ...cap.selection, ...(cap.task_settings?.[role] || {}) };
+  const settings = { ...cap.selection, ...(cap.task_settings?.[role] || (role === 'patch' ? cap.task_settings?.hd : {}) || {}) };
   if (job.canvas_ratio) {
     if (cap.fields.ratio) settings.ratio = job.canvas_ratio;
     for (const name of ['ratio', 'aspect_ratio', 'aspectRatio']) if (Object.hasOwn(cap.extra_arguments || {}, name)) output[name] = job.canvas_ratio;
